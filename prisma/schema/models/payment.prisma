@@ -1,0 +1,12 @@
+model Payment {
+    id                String        @id @default(uuid())
+    orderId           String
+    provider          String
+    providerPaymentId String
+    amount            Decimal
+    currency          String
+    status            PaymentStatus
+
+    order     Order    @relation(fields: [orderId], references: [id])
+    createdAt DateTime @default(now())
+}

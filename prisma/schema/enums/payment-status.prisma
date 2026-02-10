@@ -1,0 +1,6 @@
+enum PaymentStatus {
+    pending
+    success
+    failed
+    refunded
+}

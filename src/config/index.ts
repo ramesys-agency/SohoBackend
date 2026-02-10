@@ -1,0 +1,53 @@
+import { validateEnv } from "./env.schema.js";
+
+const env = validateEnv();
+
+export const config = {
+    port: env.PORT,
+    env: env.NODE_ENV,
+    isProduction: env.NODE_ENV === "production",
+    isDevelopment: env.NODE_ENV === "development",
+
+    database: {
+        url: env.DATABASE_URL,
+        pool: {
+            min: 2,
+            max: 10,
+            idleTimeoutMillis: 30000,
+            connectionTimeoutMillis: 5000,
+        },
+    },
+
+    logging: {
+        level: env.LOG_LEVEL,
+        lokiUrl: env.LOKI_URL || "http://localhost:3100",
+        lokiEnabled: env.LOKI_ENABLED,
+        lokiTimeoutMs: 5000,
+        appName: env.APP_NAME,
+    },
+
+    security: {
+        corsOrigin: env.CORS_ORIGIN,
+        rateLimitWindowMs: env.RATE_LIMIT_WINDOW_MS,
+        rateLimitMax: env.RATE_LIMIT_MAX,
+        rateLimitSkipPaths: ["/health", "/health/live"] as string[],
+    },
+
+    auth: {
+        jwtSecret: env.JWT_SECRET,
+        cacheTtl: env.AUTH_CACHE_TTL,
+        cookieName: env.AUTH_COOKIE_NAME,
+    },
+
+    redis: {
+        enabled: env.REDIS_ENABLED,
+        url: env.REDIS_URL,
+        host: env.REDIS_HOST,
+        port: env.REDIS_PORT,
+        password: env.REDIS_PASSWORD,
+        username: env.REDIS_USERNAME,
+        db: env.REDIS_DB,
+        tls: env.REDIS_TLS,
+        keyPrefix: env.REDIS_KEY_PREFIX,
+    },
+} as const;

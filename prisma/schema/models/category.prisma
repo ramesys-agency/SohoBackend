@@ -1,0 +1,38 @@
+model Category {
+    id       String     @id @default(uuid())
+    parentId String?
+    parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+    children Category[] @relation("CategoryTree")
+
+    name         String
+    slug         String  @unique
+    imageUrl     String?
+    isActive     Boolean @default(true)
+    displayOrder Int     @default(0)
+
+    attributes CategoryAttribute[]
+    products   Product[]
+    sizeCharts SizeChart[]
+
+    createdAt DateTime  @default(now())
+    updatedAt DateTime  @updatedAt
+    deletedAt DateTime?
+
+    @@index([parentId])
+}
+
+model CategoryAttribute {
+    id         String   @id @default(uuid())
+    categoryId String
+    category   Category @relation(fields: [categoryId], references: [id])
+
+    key          String
+    label        String
+    type         String
+    options      Json?
+    isFilterable Boolean @default(false)
+
+    createdAt DateTime @default(now())
+
+    @@unique([categoryId, key])
+}

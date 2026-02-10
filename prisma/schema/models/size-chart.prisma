@@ -1,0 +1,27 @@
+model SizeChart {
+    id   String @id @default(uuid())
+    name String
+    unit String @default("inches")
+
+    categoryId String?
+    productId  String?
+
+    category Category? @relation(fields: [categoryId], references: [id])
+    product  Product?  @relation(fields: [productId], references: [id])
+
+    rows SizeChartRow[]
+
+    createdAt DateTime @default(now())
+
+    @@index([categoryId])
+    @@index([productId])
+}
+
+model SizeChartRow {
+    id           String @id @default(uuid())
+    sizeChartId  String
+    sizeLabel    String
+    measurements Json
+
+    sizeChart SizeChart @relation(fields: [sizeChartId], references: [id])
+}

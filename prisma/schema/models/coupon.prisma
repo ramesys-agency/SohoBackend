@@ -1,0 +1,13 @@
+model Coupon {
+    id             String     @id @default(uuid())
+    code           String     @unique
+    type           CouponType
+    value          Decimal
+    minOrderAmount Decimal?
+    maxDiscount    Decimal?
+    validFrom      DateTime
+    validTo        DateTime
+    isActive       Boolean    @default(true)
+
+    orders Order[]
+}

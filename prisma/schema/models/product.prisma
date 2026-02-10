@@ -1,0 +1,84 @@
+model Product {
+    id         String   @id @default(uuid())
+    categoryId String
+    category   Category @relation(fields: [categoryId], references: [id])
+
+    name          String
+    description   String?
+    basePrice     Decimal
+    originalPrice Decimal?
+    attributes    Json
+
+    overallRating Decimal @default(0)
+    reviewCount   Int     @default(0)
+    isPublished   Boolean @default(false)
+
+    variants   ProductVariant[]
+    images     ProductImage[]
+    reviews    Review[]
+    wishlists  Wishlist[]
+    orderItems OrderItem[]
+
+    collections  ProductCollection[]
+    seo          ProductSEO?
+    priceHistory ProductPriceHistory[]
+    sizeCharts   SizeChart[]
+
+    createdAt DateTime  @default(now())
+    updatedAt DateTime  @updatedAt
+    deletedAt DateTime?
+
+    @@index([categoryId])
+    @@index([attributes], type: Gin)
+}
+
+model ProductVariant {
+    id        String  @id @default(uuid())
+    productId String
+    product   Product @relation(fields: [productId], references: [id])
+
+    sku        String   @unique
+    size       String?
+    colorName  String?
+    colorValue String?
+    stockQty   Int      @default(0)
+    priceDiff  Decimal?
+
+    cartItems  CartItem[]
+    orderItems OrderItem[]
+    inventory  InventoryLog[]
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+}
+
+model ProductImage {
+    id        String  @id @default(uuid())
+    productId String
+    product   Product @relation(fields: [productId], references: [id])
+
+    imageUrl     String
+    isPrimary    Boolean @default(false)
+    displayOrder Int     @default(0)
+    colorRef     String?
+
+    createdAt DateTime @default(now())
+}
+
+model ProductSEO {
+    productId       String  @id
+    metaTitle       String?
+    metaDescription String?
+    canonicalUrl    String?
+
+    product Product @relation(fields: [productId], references: [id])
+}
+
+model ProductPriceHistory {
+    id            String   @id @default(uuid())
+    productId     String
+    price         Decimal
+    effectiveFrom DateTime
+
+    product Product @relation(fields: [productId], references: [id])
+}

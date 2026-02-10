@@ -1,0 +1,55 @@
+model Order {
+    id          String      @id @default(uuid())
+    userId      String
+    addressId   String
+    status      OrderStatus @default(pending)
+    totalAmount Decimal
+
+    couponId       String?
+    discountAmount Decimal @default(0)
+
+    user    User    @relation(fields: [userId], references: [id])
+    address Address @relation(fields: [addressId], references: [id])
+    coupon  Coupon? @relation(fields: [couponId], references: [id])
+
+    items      OrderItem[]
+    payments   Payment[]
+    statusLogs OrderStatusLog[]
+
+    createdAt DateTime @default(now())
+}
+
+model OrderItem {
+    id         String  @id @default(uuid())
+    orderId    String
+    productId  String
+    variantId  String
+    quantity   Int
+    priceAtBuy Decimal
+
+    order   Order          @relation(fields: [orderId], references: [id])
+    product Product        @relation(fields: [productId], references: [id])
+    variant ProductVariant @relation(fields: [variantId], references: [id])
+
+    returns Return[]
+}
+
+model OrderStatusLog {
+    id      String      @id @default(uuid())
+    orderId String
+    status  OrderStatus
+    note    String?
+
+    order     Order    @relation(fields: [orderId], references: [id])
+    createdAt DateTime @default(now())
+}
+
+model Return {
+    id          String       @id @default(uuid())
+    orderItemId String
+    reason      String
+    status      ReturnStatus @default(requested)
+
+    orderItem OrderItem @relation(fields: [orderItemId], references: [id])
+    createdAt DateTime  @default(now())
+}

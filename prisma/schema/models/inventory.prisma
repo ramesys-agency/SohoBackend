@@ -1,0 +1,10 @@
+model InventoryLog {
+    id          String  @id @default(uuid())
+    variantId   String
+    changeQty   Int
+    reason      String
+    referenceId String?
+
+    variant   ProductVariant @relation(fields: [variantId], references: [id])
+    createdAt DateTime       @default(now())
+}

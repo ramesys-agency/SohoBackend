@@ -1,0 +1,65 @@
+name: soho-backend
+services:
+    postgres:
+        profiles: ["postgres", "db", "all"]
+        image: postgres:16-alpine
+        environment:
+            - POSTGRES_USER=${POSTGRES_USER:-postgres}
+            - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+            - POSTGRES_DB=${POSTGRES_DB:-soho_db}
+        ports:
+            - "${POSTGRES_PORT:-5432}:5432"
+        volumes:
+            - soho-postgres-data:/var/lib/postgresql/data
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+            interval: 5s
+            timeout: 5s
+            retries: 5
+        restart: unless-stopped
+
+    redis:
+        profiles: ["redis", "db", "all"]
+        image: redis:7-alpine
+        ports:
+            - "${REDIS_PORT:-6379}:6379"
+        volumes:
+            - soho-redis-data:/data
+        command: redis-server --appendonly yes
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            interval: 5s
+            timeout: 5s
+            retries: 5
+        restart: unless-stopped
+
+    loki:
+        profiles: ["loki", "monitoring", "all"]
+        image: grafana/loki:2.9.0
+        ports:
+            - "${LOKI_PORT:-3100}:3100"
+        volumes:
+            - soho-loki-data:/loki
+        command: -config.file=/etc/loki/local-config.yaml
+        restart: unless-stopped
+
+    grafana:
+        profiles: ["grafana", "monitoring", "all"]
+        image: grafana/grafana:10.2.0
+        ports:
+            - "${GRAFANA_PORT:-3001}:3000"
+        environment:
+            - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+            - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+        volumes:
+            - soho-grafana-data:/var/lib/grafana
+            - ./grafana/provisioning:/etc/grafana/provisioning
+        depends_on:
+            - loki
+        restart: unless-stopped
+
+volumes:
+    soho-postgres-data:
+    soho-redis-data:
+    soho-loki-data:
+    soho-grafana-data:

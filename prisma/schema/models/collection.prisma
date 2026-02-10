@@ -1,0 +1,20 @@
+model Collection {
+    id       String  @id @default(uuid())
+    name     String
+    slug     String  @unique
+    isActive Boolean @default(true)
+
+    products ProductCollection[]
+
+    createdAt DateTime @default(now())
+}
+
+model ProductCollection {
+    productId    String
+    collectionId String
+
+    product    Product    @relation(fields: [productId], references: [id])
+    collection Collection @relation(fields: [collectionId], references: [id])
+
+    @@id([productId, collectionId])
+}

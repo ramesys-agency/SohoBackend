@@ -1,0 +1,48 @@
+# Dependencies
+node_modules
+
+# Build output
+dist
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Generated files (will be regenerated in build)
+src/generated
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Docker volumes
+postgres-data
+loki-data
+grafana-data
+
+# Test coverage
+coverage
+
+# Git
+.git
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# Prisma local db
+prisma/*.db
+prisma/*.db-journal

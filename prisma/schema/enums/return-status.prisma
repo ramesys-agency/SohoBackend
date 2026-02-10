@@ -1,0 +1,6 @@
+enum ReturnStatus {
+    requested
+    approved
+    rejected
+    refunded
+}
