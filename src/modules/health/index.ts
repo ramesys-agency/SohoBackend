@@ -11,8 +11,8 @@ export function registerHealthModule(): Router {
 
     const controller = new HealthController();
 
-    router.get("/health", controller.getHealth);
-    router.get("/health/live", controller.getLiveness);
+    router.get("/", controller.getHealth);
+    router.get("/live", controller.getLiveness);
 
     return router;
 }
