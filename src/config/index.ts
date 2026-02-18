@@ -36,7 +36,8 @@ export const config = {
     auth: {
         jwtSecret: env.JWT_SECRET,
         cacheTtl: env.AUTH_CACHE_TTL,
-        cookieName: env.AUTH_COOKIE_NAME,
+        accessToken: env.AUTH_ACCESS_TOKEN,
+        refreshToken: env.AUTH_REFRESH_TOKEN,
     },
 
     redis: {

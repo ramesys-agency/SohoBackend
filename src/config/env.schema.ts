@@ -34,7 +34,8 @@ const envSchema = z.object({
     // Auth
     JWT_SECRET: z.string().min(32),
     AUTH_CACHE_TTL: z.coerce.number().default(300), // 5 minutes
-    AUTH_COOKIE_NAME: z.string().default("auth_token"),
+    AUTH_ACCESS_TOKEN: z.string().default("access_token"),
+    AUTH_REFRESH_TOKEN: z.string().default("refresh_token"),
 
     // Redis
     REDIS_ENABLED: z

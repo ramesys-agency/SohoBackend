@@ -4,5 +4,6 @@ export {
     UnauthorizedError,
     ForbiddenError,
     NotFoundError,
+    ConflictError,
     ValidationError,
 } from "./http-errors.js";

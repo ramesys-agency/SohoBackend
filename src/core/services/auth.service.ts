@@ -89,52 +89,33 @@ export class AuthService implements IAuthService {
         }
     }
 
-    private async fetchUserFromDb(userId: string, roleId: string): Promise<AuthUser | null> {
-        // Query user with role via junction table
-        const userRole = await this.prisma.organisationUserRole.findFirst({
-            where: {
-                organisationUserId: userId,
-                roleId: roleId,
-            },
-            include: {
-                organisationUser: {
-                    select: {
-                        id: true,
-                        email: true,
-                        firstName: true,
-                        lastName: true,
-                        status: true,
-                        organisationId: true,
-                    },
-                },
-                role: {
-                    select: {
-                        id: true,
-                        name: true,
-                        status: true,
-                    },
-                },
+    private async fetchUserFromDb(userId: string, role: string): Promise<AuthUser | null> {
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: {
+                id: true,
+                email: true,
+                fullName: true,
+                phone: true,
+                role: true,
             },
         });
 
-        if (!userRole) {
+        if (!user) {
             return null;
         }
 
-        const { organisationUser, role } = userRole;
+        // Verify role matches
+        if (user.role !== role) {
+            return null;
+        }
 
         return {
-            id: organisationUser.id,
-            email: organisationUser.email,
-            firstName: organisationUser.firstName,
-            lastName: organisationUser.lastName,
-            status: organisationUser.status,
-            organisationId: organisationUser.organisationId,
-            role: {
-                id: role.id,
-                name: role.name,
-                status: role.status,
-            },
+            id: user.id,
+            email: user.email,
+            fullName: user.fullName,
+            phone: user.phone,
+            role: user.role,
         };
     }
 }

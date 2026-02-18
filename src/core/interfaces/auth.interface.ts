@@ -1,6 +1,6 @@
 export interface JwtPayload {
     userId: string;
-    roleId: string;
+    role: string;
     iat?: number;
     exp?: number;
 }
@@ -8,18 +8,12 @@ export interface JwtPayload {
 export interface AuthUser {
     id: string;
     email: string;
-    firstName: string | null;
-    lastName: string | null;
-    status: "ACTIVE" | "INACTIVE";
-    organisationId: string;
-    role: {
-        id: string;
-        name: string;
-        status: "ACTIVE" | "INACTIVE";
-    };
+    fullName: string;
+    phone: string | null;
+    role: string; // Storing role as string (enum value)
 }
 
 export interface IAuthService {
-    verifyAndGetUser(userId: string, roleId: string): Promise<AuthUser | null>;
-    invalidateUserCache(userId: string, roleId: string): Promise<void>;
+    verifyAndGetUser(userId: string, role: string): Promise<AuthUser | null>;
+    invalidateUserCache(userId: string, role: string): Promise<void>;
 }

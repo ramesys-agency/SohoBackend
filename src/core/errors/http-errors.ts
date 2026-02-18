@@ -27,8 +27,14 @@ export class ForbiddenError extends HttpError {
 }
 
 export class NotFoundError extends HttpError {
-    constructor(message = "Not Found") {
+    constructor(message: string = "Resource not found") {
         super(404, message);
+    }
+}
+
+export class ConflictError extends HttpError {
+    constructor(message: string = "Resource already exists") {
+        super(409, message);
     }
 }
 

@@ -1,7 +1,7 @@
 import type { RequestHandler } from "express";
 import jwt from "jsonwebtoken";
 import type { IAuthService, JwtPayload } from "../interfaces/index.js";
-import { UnauthorizedError, ForbiddenError } from "../errors/index.js";
+import { UnauthorizedError } from "../errors/index.js";
 
 export interface AuthMiddlewareConfig {
     cookieName: string;
@@ -14,8 +14,19 @@ export function createAuthMiddleware(
 ): RequestHandler {
     return async (req, res, next) => {
         try {
-            // 1. Get token from cookie
-            const token = req.cookies?.[config.cookieName];
+            // 1. Get token from Authorization header or cookie
+            let token: string | undefined;
+
+            const authHeader = req.headers.authorization;
+            if (authHeader && authHeader.startsWith("Bearer ")) {
+                token = authHeader.split(" ")[1];
+            }
+
+            // Fallback to cookie if enabled/needed, but user requested Bearer priority
+            if (!token && req.cookies?.[config.cookieName]) {
+                token = req.cookies[config.cookieName];
+            }
+
             if (!token) {
                 throw new UnauthorizedError("No auth token provided");
             }
@@ -34,18 +45,10 @@ export function createAuthMiddleware(
                 throw error;
             }
 
-            // 3. Verify user/role in DB (with cache)
-            const user = await authService.verifyAndGetUser(payload.userId, payload.roleId);
+            // 3. Verify user in DB (with cache)
+            const user = await authService.verifyAndGetUser(payload.userId, payload.role);
             if (!user) {
-                throw new UnauthorizedError("User or role not found");
-            }
-
-            // 4. Check status
-            if (user.status !== "ACTIVE") {
-                throw new ForbiddenError("User account is inactive");
-            }
-            if (user.role.status !== "ACTIVE") {
-                throw new ForbiddenError("Role is inactive");
+                throw new UnauthorizedError("User not found");
             }
 
             // 5. Attach to request
