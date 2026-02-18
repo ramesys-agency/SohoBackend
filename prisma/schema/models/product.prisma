@@ -3,11 +3,9 @@ model Product {
     categoryId String
     category   Category @relation(fields: [categoryId], references: [id])
 
-    name          String
-    description   String?
-    basePrice     Decimal
-    originalPrice Decimal?
-    attributes    Json
+    name        String
+    description String?
+    attributes  Json
 
     overallRating Decimal @default(0)
     reviewCount   Int     @default(0)
@@ -16,7 +14,6 @@ model Product {
     variants   ProductVariant[]
     images     ProductImage[]
     reviews    Review[]
-    wishlists  Wishlist[]
     orderItems OrderItem[]
 
     collections  ProductCollection[]
@@ -24,9 +21,10 @@ model Product {
     priceHistory ProductPriceHistory[]
     sizeCharts   SizeChart[]
 
-    createdAt DateTime  @default(now())
-    updatedAt DateTime  @updatedAt
+    createdAt DateTime   @default(now())
+    updatedAt DateTime   @updatedAt
     deletedAt DateTime?
+    wishlists Wishlist[]
 
     @@index([categoryId])
     @@index([attributes], type: Gin)
@@ -37,16 +35,19 @@ model ProductVariant {
     productId String
     product   Product @relation(fields: [productId], references: [id])
 
-    sku        String   @unique
-    size       String?
-    colorName  String?
-    colorValue String?
-    stockQty   Int      @default(0)
-    priceDiff  Decimal?
+    sku           String   @unique
+    size          String?
+    colorName     String?
+    colorValue    String?
+    stockQty      Int      @default(0)
+    basePrice     Decimal // Selling price on UI
+    originalPrice Decimal? // Will be shown as MRP
+    isDefault     Boolean  @default(false)
 
     cartItems  CartItem[]
     orderItems OrderItem[]
     inventory  InventoryLog[]
+    wishlists  Wishlist[]
 
     createdAt DateTime @default(now())
     updatedAt DateTime @updatedAt

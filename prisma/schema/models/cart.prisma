@@ -7,5 +7,7 @@ model CartItem {
     user    User           @relation(fields: [userId], references: [id])
     variant ProductVariant @relation(fields: [variantId], references: [id])
 
+    createdAt DateTime @default(now())
+
     @@unique([userId, variantId])
 }

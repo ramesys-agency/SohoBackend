@@ -60,6 +60,8 @@ export class ProductService implements IProductService {
                             colorName: true,
                             colorValue: true,
                             stockQty: true,
+                            basePrice: true,
+                            originalPrice: true,
                         },
                     },
                 },
@@ -80,8 +82,8 @@ export class ProductService implements IProductService {
                 id: p.id,
                 name: p.name,
                 slug: p.id, // TODO: Add slug field to Product model if needed
-                price: Number(p.basePrice),
-                originalPrice: Number(p.originalPrice),
+                price: Number(p.variants[0]?.basePrice),
+                originalPrice: Number(p.variants[0]?.originalPrice),
                 rating: Number(p.overallRating),
                 reviewCount: p.reviewCount,
                 primaryImage:
@@ -98,8 +100,8 @@ export class ProductService implements IProductService {
                 inStock: p.variants.some((v) => v.stockQty > 0),
             };
 
-            if (p.originalPrice) {
-                productDto.originalPrice = Number(p.originalPrice);
+            if (p.variants[0]?.originalPrice) {
+                productDto.originalPrice = Number(p.variants[0]?.originalPrice);
             }
 
             return productDto;

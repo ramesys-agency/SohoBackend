@@ -113,8 +113,6 @@ async function main() {
                 name: `${category.name} ${i}`,
                 description: `High quality ${category.name.toLowerCase()} designed for modern lifestyle.`,
                 categoryId: category.id,
-                basePrice,
-                originalPrice: basePrice + 400,
                 isPublished: true,
                 attributes: {
                     gender,
@@ -149,6 +147,8 @@ async function main() {
                     colorName: color.name,
                     colorValue: `#${color.hex}`,
                     stockQty: 10 + (i % 20),
+                    basePrice,
+                    originalPrice: basePrice + 400,
                 },
             });
 
