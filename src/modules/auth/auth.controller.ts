@@ -1,6 +1,11 @@
 import type { Request, Response, NextFunction } from "express";
 import { AuthService } from "./auth.service.js";
-import { SignupSchemaStrict, LoginSchema } from "./auth.schema.js";
+import {
+    SignupSchemaStrict,
+    LoginSchema,
+    ForgotPasswordSchema,
+    ResetPasswordSchema,
+} from "./auth.schema.js";
 
 export class AuthController {
     private authService: AuthService;
@@ -62,6 +67,26 @@ export class AuthController {
                     refreshToken: result.refreshToken,
                 },
             });
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    forgotPassword = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const data = ForgotPasswordSchema.parse(req).body;
+            const result = await this.authService.forgotPassword(data);
+            res.status(200).json(result);
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    resetPassword = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const data = ResetPasswordSchema.parse(req).body;
+            const result = await this.authService.resetPassword(data);
+            res.status(200).json(result);
         } catch (error) {
             next(error);
         }

@@ -8,6 +8,10 @@ export const config = {
     isProduction: env.NODE_ENV === "production",
     isDevelopment: env.NODE_ENV === "development",
 
+    app: {
+        frontendUrl: env.FRONTEND_URL,
+    },
+
     database: {
         url: env.DATABASE_URL,
         pool: {

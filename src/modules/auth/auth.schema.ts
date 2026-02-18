@@ -5,17 +5,10 @@ export const SignupSchema = z.object({
         email: z.string().email("Invalid email address"),
         password: z.string().min(8, "Password must be at least 8 characters long"),
         fullName: z.string().min(2, "Full name must be at least 2 characters long"),
-        phone: z.string().optional(), // Made phone optional based on User model having phone as String?
-        // Note: User request says "Signup will be done using email, password, name and phone number".
-        // Use regex for phone if it's strictly required, but model has it optional?
-        // Let's make it required as per USER REQUEST, even if DB allows null?
-        // "Signup will be done using email, password, name and phone number." -> implies all are required.
+        phone: z.string().optional(),
     }),
 });
 
-// Refine phone to be required if user insists, but let's check strictness.
-// User said: "Signup will be done using email, password, name and phone number."
-// So I will make it required in the schema.
 export const SignupSchemaStrict = z.object({
     body: z.object({
         email: z.string().email("Invalid email address"),
@@ -32,5 +25,20 @@ export const LoginSchema = z.object({
     }),
 });
 
+export const ForgotPasswordSchema = z.object({
+    body: z.object({
+        email: z.string().email("Invalid email address"),
+    }),
+});
+
+export const ResetPasswordSchema = z.object({
+    body: z.object({
+        token: z.string().min(1, "Token is required"),
+        password: z.string().min(8, "Password must be at least 8 characters long"),
+    }),
+});
+
 export type SignupInput = z.infer<typeof SignupSchemaStrict>["body"];
 export type LoginInput = z.infer<typeof LoginSchema>["body"];
+export type ForgotPasswordInput = z.infer<typeof ForgotPasswordSchema>["body"];
+export type ResetPasswordInput = z.infer<typeof ResetPasswordSchema>["body"];

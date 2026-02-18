@@ -8,6 +8,8 @@ export function createAuthRouter(): Router {
     router.post("/signup", controller.signup);
     router.post("/login", controller.login);
     router.post("/refresh", controller.refresh);
+    router.post("/forgot-password", controller.forgotPassword);
+    router.post("/reset-password", controller.resetPassword);
 
     return router;
 }

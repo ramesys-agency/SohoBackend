@@ -5,6 +5,10 @@ import type { JwtPayload } from "../../core/interfaces/index.js";
 
 const scryptAsync = promisify(scrypt);
 
+export interface PasswordResetPayload extends JwtPayload {
+    hash: string;
+}
+
 export class AuthUtils {
     static async hashPassword(password: string): Promise<string> {
         const salt = randomBytes(16).toString("hex");
@@ -34,5 +38,15 @@ export class AuthUtils {
 
     static verifyToken(token: string, secret: string): JwtPayload {
         return jwt.verify(token, secret) as JwtPayload;
+    }
+
+    static generatePasswordResetToken(payload: PasswordResetPayload, secret: string): string {
+        return jwt.sign({ ...payload }, secret, {
+            expiresIn: "15m", // Short expiration for security
+        });
+    }
+
+    static verifyPasswordResetToken(token: string, secret: string): PasswordResetPayload {
+        return jwt.verify(token, secret) as PasswordResetPayload;
     }
 }
