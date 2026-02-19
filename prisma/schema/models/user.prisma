@@ -5,6 +5,11 @@ model User {
     phone        String?
     passwordHash String
     role         UserRole @default(customer)
+    avatar       String?
+    age          Int?
+    gender       String?
+    isVerified   Boolean  @default(false)
+    isDeleted    Boolean  @default(false)
 
     addresses Address[]
     orders    Order[]
