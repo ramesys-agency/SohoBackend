@@ -9,6 +9,7 @@ model Review {
     rating  Int
     comment String?
     images  String[]
+    videos  String[]
 
     createdAt DateTime @default(now())
 }
