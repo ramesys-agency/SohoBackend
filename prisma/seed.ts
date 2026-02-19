@@ -139,7 +139,7 @@ async function main() {
         const variantColors = colors.sort(() => 0.5 - Math.random()).slice(0, 2);
 
         for (const color of variantColors) {
-            await prisma.productVariant.create({
+            const variant = await prisma.productVariant.create({
                 data: {
                     productId: product.id,
                     sku: `${category.slug}-${color.name}-${i}`,
@@ -152,10 +152,10 @@ async function main() {
                 },
             });
 
-            await prisma.productImage.createMany({
+            await prisma.productVariantImage.createMany({
                 data: [
                     {
-                        productId: product.id,
+                        variantId: variant.id,
                         imageUrl: `https://dummyimage.com/600x800/${color.hex}/ffffff&text=${encodeURIComponent(
                             category.name + " " + color.name
                         )}`,
@@ -164,7 +164,7 @@ async function main() {
                         displayOrder: 1,
                     },
                     {
-                        productId: product.id,
+                        variantId: variant.id,
                         imageUrl: `https://dummyimage.com/600x800/${color.hex}/ffffff&text=Back+View`,
                         colorRef: color.name,
                         displayOrder: 2,
