@@ -8,4 +8,4 @@ export {
 export { createRequestIdMiddleware } from "./request-id.middleware.js";
 export { createRequestLoggerMiddleware } from "./request-logger.middleware.js";
 export { setupMiddleware, type MiddlewareConfig } from "./setup.middleware.js";
-export { createAuthMiddleware, type AuthMiddlewareConfig } from "./auth.middleware.js";
+export { authMiddleware } from "./auth.middleware.js";

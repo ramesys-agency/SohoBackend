@@ -1,35 +1,29 @@
-import type { IAuthService, AuthUser, ICacheService } from "../interfaces/index.js";
-import type { PrismaClient } from "../../generated/prisma/client.js";
+import type { IAuthService, AuthUser } from "../interfaces/index.js";
 import { logger } from "../../config/logger.js";
+import { redis } from "../../config/redis.js";
+import { config } from "../../config/index.js";
+import { prisma } from "../../config/prisma.js";
 
 export interface AuthServiceConfig {
     cacheTtl: number;
 }
 
 export class AuthService implements IAuthService {
-    private readonly prisma: PrismaClient;
-    private readonly cache: ICacheService | null;
-    private readonly config: AuthServiceConfig;
     private cacheFailureCount = 0;
     private readonly MAX_CACHE_FAILURES = 10;
     private cacheFailureResetTimer: NodeJS.Timeout | null = null;
-
-    constructor(prisma: PrismaClient, cache: ICacheService | null, config: AuthServiceConfig) {
-        this.prisma = prisma;
-        this.cache = cache;
-        this.config = config;
-    }
 
     async verifyAndGetUser(userId: string, roleId: string): Promise<AuthUser | null> {
         const cacheKey = `auth:${userId}:${roleId}`;
 
         // Circuit breaker: skip cache if failure threshold exceeded
-        if (this.cache?.isConnected() && this.cacheFailureCount < this.MAX_CACHE_FAILURES) {
+        // Circuit breaker: skip cache if failure threshold exceeded
+        if (redis.isConnected() && this.cacheFailureCount < this.MAX_CACHE_FAILURES) {
             try {
-                return await this.cache.getOrSet<AuthUser | null>(
+                return await redis.getOrSet<AuthUser | null>(
                     cacheKey,
                     () => this.fetchUserFromDb(userId, roleId),
-                    this.config.cacheTtl
+                    config.auth.cacheTtl
                 );
             } catch (error) {
                 this.cacheFailureCount++;
@@ -50,7 +44,6 @@ export class AuthService implements IAuthService {
                 // Fall through to direct DB query
             }
         }
-
         // Direct DB query (cache unavailable or failed)
         return this.fetchUserFromDb(userId, roleId);
     }
@@ -72,13 +65,13 @@ export class AuthService implements IAuthService {
     }
 
     async invalidateUserCache(userId: string, roleId: string): Promise<void> {
-        if (!this.cache?.isConnected()) {
+        if (!redis.isConnected()) {
             return;
         }
 
         const cacheKey = `auth:${userId}:${roleId}`;
         try {
-            await this.cache.del(cacheKey);
+            await redis.del(cacheKey);
             logger.debug("Auth cache invalidated", { userId, roleId });
         } catch (error) {
             logger.warn("Failed to invalidate auth cache", {
@@ -90,7 +83,8 @@ export class AuthService implements IAuthService {
     }
 
     private async fetchUserFromDb(userId: string, role: string): Promise<AuthUser | null> {
-        const user = await this.prisma.user.findUnique({
+        const db = prisma.getClient();
+        const user = await db.user.findUnique({
             where: { id: userId },
             select: {
                 id: true,

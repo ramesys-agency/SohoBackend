@@ -2,6 +2,8 @@ import { Router } from "express";
 import { registerProductModule } from "../../modules/product/index.js";
 import { registerHealthModule } from "../../modules/health/index.js";
 import { registerAuthModule } from "../../modules/auth/index.js";
+import { registerWishlistModule } from "../../modules/wishlist/index.js";
+// import { authMiddleware } from "../../core/middleware/auth.middleware.js";
 
 export function createV1Router(): Router {
     const router = Router();
@@ -10,6 +12,7 @@ export function createV1Router(): Router {
     router.use("/auth", registerAuthModule());
     router.use("/products", registerProductModule());
     router.use("/health", registerHealthModule());
+    router.use("/wishlist", registerWishlistModule());
 
     return router;
 }
