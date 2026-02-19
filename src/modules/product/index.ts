@@ -12,6 +12,7 @@ export function registerProductModule(): Router {
     const controller = new ProductController();
 
     router.get("/", controller.getAllProducts);
+    router.get("/:productId", controller.getProductById);
 
     return router;
 }

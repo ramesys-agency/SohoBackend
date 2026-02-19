@@ -121,10 +121,10 @@ export class ReviewController {
             }
 
             const data: UpdateReviewDto = {
-                rating: rating !== undefined ? Number(rating) : undefined,
-                comment,
-                images,
-                videos,
+                ...(rating !== undefined && { rating: Number(rating) }),
+                ...(comment !== undefined && { comment }),
+                ...(images !== undefined && { images }),
+                ...(videos !== undefined && { videos }),
             };
             const review = await this.reviewService.updateReview(
                 userId,

@@ -19,4 +19,20 @@ export class ProductController {
             next(error);
         }
     };
+
+    getProductById = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+        try {
+            const { productId } = req.params;
+            if (!productId) {
+                throw new Error("Product ID is required");
+            }
+
+            const product = await this.productService.getProductById(productId as string);
+            logger.info("Product fetched successfully", { productId });
+
+            res.status(200).json(product);
+        } catch (error) {
+            next(error);
+        }
+    };
 }

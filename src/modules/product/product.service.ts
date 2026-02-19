@@ -1,6 +1,7 @@
 import type { GetProductsQueryDto, GetProductsResponseDto } from "./product.types.js";
 import type { IProductService } from "./product.interface.js";
 import { PrismaService } from "../../core/services/index.js";
+import { NotFoundError } from "../../core/errors/http-errors.js";
 import {
     getCategoryIds,
     getAvailableFilters,
@@ -11,6 +12,34 @@ import {
 
 export class ProductService implements IProductService {
     private prisma: PrismaService = new PrismaService();
+
+    async getProductById(productId: string): Promise<any> {
+        const product = await this.prisma.getClient().product.findUnique({
+            where: { id: productId },
+            include: {
+                variants: {
+                    include: {
+                        images: true,
+                    },
+                },
+                reviews: {
+                    include: {
+                        user: {
+                            select: {
+                                fullName: true,
+                            },
+                        },
+                    },
+                },
+            },
+        });
+
+        if (!product) {
+            throw new NotFoundError("Product not found");
+        }
+
+        return product;
+    }
 
     async getAllProducts(query: GetProductsQueryDto): Promise<GetProductsResponseDto> {
         const {
@@ -54,7 +83,6 @@ export class ProductService implements IProductService {
                 skip,
                 take,
                 include: {
-                    images: true,
                     variants: {
                         select: {
                             colorName: true,
@@ -62,6 +90,12 @@ export class ProductService implements IProductService {
                             stockQty: true,
                             basePrice: true,
                             originalPrice: true,
+                            images: {
+                                where: {
+                                    isPrimary: true,
+                                },
+                                take: 1,
+                            },
                         },
                     },
                 },
@@ -86,8 +120,7 @@ export class ProductService implements IProductService {
                 originalPrice: Number(p.variants[0]?.originalPrice),
                 rating: Number(p.overallRating),
                 reviewCount: p.reviewCount,
-                primaryImage:
-                    p.images.find((i) => i.isPrimary)?.imageUrl || p.images[0]?.imageUrl || "",
+                primaryImage: p.variants[0]?.images[0]?.imageUrl || "",
                 availableColors: Array.from(
                     new Set(
                         p.variants.map((v) =>
