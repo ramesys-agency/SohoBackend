@@ -7,6 +7,7 @@ import { registerCartModule } from "../../modules/cart/index.js";
 import { registerReviewModule } from "../../modules/review/index.js";
 import { registerUploadModule } from "../../modules/upload/index.js";
 import { registerUserModule } from "../../modules/user/index.js";
+import { registerAddressModule } from "../../modules/address/index.js";
 import { registerOrdersModule } from "../../modules/orders/orders.routes.js";
 // import { authMiddleware } from "../../core/middleware/auth.middleware.js";
 
@@ -23,6 +24,7 @@ export function createV1Router(): Router {
     router.use("/upload", registerUploadModule());
     router.use("/users", registerUserModule());
     router.use("/orders", registerOrdersModule());
+    router.use("/addresses", registerAddressModule());
 
     return router;
 }
