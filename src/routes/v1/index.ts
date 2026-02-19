@@ -3,6 +3,8 @@ import { registerProductModule } from "../../modules/product/index.js";
 import { registerHealthModule } from "../../modules/health/index.js";
 import { registerAuthModule } from "../../modules/auth/index.js";
 import { registerWishlistModule } from "../../modules/wishlist/index.js";
+import { registerCartModule } from "../../modules/cart/index.js";
+import { registerReviewModule } from "../../modules/review/index.js";
 // import { authMiddleware } from "../../core/middleware/auth.middleware.js";
 
 export function createV1Router(): Router {
@@ -13,6 +15,7 @@ export function createV1Router(): Router {
     router.use("/products", registerProductModule());
     router.use("/health", registerHealthModule());
     router.use("/wishlist", registerWishlistModule());
+    router.use("/cart", registerCartModule());
 
     return router;
 }
