@@ -5,4 +5,5 @@ export const updateProfileSchema = z.object({
     phone: z.string().optional(),
     gender: z.string().optional(),
     age: z.number().int().positive().optional(),
+    region: z.string().optional(),
 });

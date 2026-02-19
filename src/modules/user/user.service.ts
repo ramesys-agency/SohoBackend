@@ -9,6 +9,7 @@ export class UserService {
             phone?: string | undefined;
             gender?: string | undefined;
             age?: number | undefined;
+            region?: string | undefined;
         }
     ) {
         return await this.prisma.getClient().user.update({
@@ -23,6 +24,7 @@ export class UserService {
                 phone: true,
                 gender: true,
                 age: true,
+                region: true,
                 role: true,
                 avatar: true,
                 createdAt: true,
@@ -52,6 +54,7 @@ export class UserService {
                 phone: true,
                 gender: true,
                 age: true,
+                region: true,
                 role: true,
                 avatar: true,
                 createdAt: true,
