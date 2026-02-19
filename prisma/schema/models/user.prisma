@@ -8,14 +8,16 @@ model User {
     avatar       String?
     age          Int?
     gender       String?
+    region       String?
     isVerified   Boolean  @default(false)
     isDeleted    Boolean  @default(false)
 
-    addresses Address[]
-    orders    Order[]
-    reviews   Review[]
-    wishlists Wishlist[]
-    cartItems CartItem[]
+    addresses           Address[]
+    orders              Order[]
+    reviews             Review[]
+    wishlists           Wishlist[]
+    cartItems           CartItem[]
+    savedPaymentMethods SavedPaymentMethod[]
 
     createdAt DateTime  @default(now())
     updatedAt DateTime  @updatedAt
@@ -32,7 +34,33 @@ model Address {
     city       String
     state      String
     postalCode String
-    isDefault  Boolean @default(false)
+    country    String?
+
+    latitude  Float?
+    longitude Float?
+
+    placeId          String? // Google Place ID
+    formattedAddress String?
+
+    isDefault Boolean @default(false)
 
     orders Order[]
+}
+
+model SavedPaymentMethod {
+    id                String @id @default(uuid())
+    userId            String
+    provider          String // stripe, razorpay
+    providerPaymentId String // e.g. pm_12345
+
+    brand    String // Visa, MasterCard
+    last4    String // 4242
+    expMonth Int
+    expYear  Int
+
+    isDefault Boolean @default(false)
+
+    user User @relation(fields: [userId], references: [id])
+
+    createdAt DateTime @default(now())
 }
