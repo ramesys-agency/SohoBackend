@@ -6,6 +6,7 @@ import { registerWishlistModule } from "../../modules/wishlist/index.js";
 import { registerCartModule } from "../../modules/cart/index.js";
 import { registerReviewModule } from "../../modules/review/index.js";
 import { registerUploadModule } from "../../modules/upload/index.js";
+import { registerUserModule } from "../../modules/user/index.js";
 // import { authMiddleware } from "../../core/middleware/auth.middleware.js";
 
 export function createV1Router(): Router {
@@ -19,6 +20,7 @@ export function createV1Router(): Router {
     router.use("/cart", registerCartModule());
     router.use("/reviews", registerReviewModule());
     router.use("/upload", registerUploadModule());
+    router.use("/users", registerUserModule());
 
     return router;
 }
