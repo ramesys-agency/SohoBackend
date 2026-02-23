@@ -1,0 +1,26 @@
+import type { NextFunction, Request, Response } from "express";
+import { CollectionService } from "./collection.service.js";
+import type { GenderType } from "../../generated/prisma/index.js";
+
+export class CollectionController {
+    private collectionService = new CollectionService();
+
+    getAllCollections = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+        try {
+            const query = req.query as {
+                isActive?: string;
+                isBanner?: string;
+                gender?: GenderType;
+                slug?: string;
+                search?: string;
+                placementPage?: string;
+                placementSection?: string;
+                placementIsActive?: string;
+            };
+            const collections = await this.collectionService.getAllCollections(query);
+            res.status(200).json(collections);
+        } catch (error) {
+            next(error);
+        }
+    };
+}

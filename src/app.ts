@@ -1,5 +1,6 @@
 import express, { type Application } from "express";
 import type { Server } from "http";
+import os from "os";
 import {
     createRequestLoggerMiddleware,
     ErrorHandler,
@@ -30,8 +31,23 @@ export class App {
     }
 
     start(): Server {
-        this.server = this.app.listen(this.config.port, () => {
-            logger.info(`Server running at http://localhost:${this.config.port}`);
+        this.server = this.app.listen(this.config.port, "0.0.0.0", () => {
+            const interfaces = os.networkInterfaces();
+            const addresses: string[] = [];
+
+            Object.keys(interfaces).forEach((interfaceName) => {
+                interfaces[interfaceName]?.forEach((iface: os.NetworkInterfaceInfo) => {
+                    if (iface.family === "IPv4" && !iface.internal) {
+                        addresses.push(iface.address);
+                    }
+                });
+            });
+
+            logger.info("Server started successfully");
+            logger.info(`- Local:   http://localhost:${this.config.port}`);
+            addresses.forEach((address) => {
+                logger.info(`- Network: http://${address}:${this.config.port}`);
+            });
         });
 
         // Configure timeouts to prevent resource exhaustion
