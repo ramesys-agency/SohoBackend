@@ -11,6 +11,7 @@ model Product {
     reviewCount   Int     @default(0)
     isPublished   Boolean @default(false)
 
+    gender     GenderType[]
     variants   ProductVariant[]
     reviews    Review[]
     orderItems OrderItem[]

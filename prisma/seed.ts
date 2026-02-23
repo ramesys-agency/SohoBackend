@@ -36,21 +36,284 @@ async function main() {
     // ------------------------
     // COLLECTIONS
     // ------------------------
-    await prisma.collection.createMany({
-        data: [
-            { name: "New Arrivals", slug: "new-arrivals" },
-            { name: "Best Sellers", slug: "best-sellers" },
-            { name: "Trending Now", slug: "trending-now" },
-            { name: "Summer Collection", slug: "summer" },
-            { name: "Winter Wear", slug: "winter" },
-            { name: "Festive Edit", slug: "festive" },
-            { name: "Street Style", slug: "street-style" },
-            { name: "Office Wear", slug: "office-wear" },
-        ],
-        skipDuplicates: true,
-    });
+    const collectionData = [
+        // Top Banners
+        {
+            name: "Men's Grand Summer Sale",
+            slug: "men-top-banner",
+            isBanner: true,
+            bannerImage: "https://dummyimage.com/1200x500/000/fff&text=Men's+Sale",
+            imageUrl: "https://dummyimage.com/400x400/000/fff&text=Men",
+            gender: { set: ["MALE" as const] },
+        },
+        {
+            name: "Women's Trending Collection",
+            slug: "women-top-banner",
+            isBanner: true,
+            bannerImage: "https://dummyimage.com/1200x500/ff69b4/fff&text=Women's+Trends",
+            imageUrl: "https://dummyimage.com/400x400/ff69b4/fff&text=Women",
+            gender: { set: ["FEMALE" as const] },
+        },
+        {
+            name: "Kids New Arrivals",
+            slug: "kids-top-banner",
+            isBanner: true,
+            bannerImage: "https://dummyimage.com/1200x500/87ceeb/fff&text=Kids+Arrivals",
+            imageUrl: "https://dummyimage.com/400x400/87ceeb/fff&text=Kids",
+            gender: { set: ["KIDS" as const] },
+        },
+        {
+            name: "Home Top Offer",
+            slug: "home-top-banner",
+            isBanner: true,
+            bannerImage: "https://dummyimage.com/1200x500/ff4500/fff&text=Grand+Sale",
+            imageUrl: "https://dummyimage.com/400x400/ff4500/fff&text=Home",
+            gender: { set: ["MALE" as const, "FEMALE" as const, "KIDS" as const] },
+        },
+
+        // Mid Banners
+        {
+            name: "Men's Special Mid Offer",
+            slug: "men-mid-banner",
+            isBanner: true,
+            bannerImage: "https://dummyimage.com/1200x300/333/fff&text=Mid+Season+Sale",
+            imageUrl: "https://dummyimage.com/400x400/333/fff&text=Offer",
+            gender: { set: ["MALE" as const] },
+        },
+        {
+            name: "Women's Special Mid Offer",
+            slug: "women-mid-banner",
+            isBanner: true,
+            bannerImage: "https://dummyimage.com/1200x300/c71585/fff&text=Mid+Season+Sale",
+            imageUrl: "https://dummyimage.com/400x400/c71585/fff&text=Offer",
+            gender: { set: ["FEMALE" as const] },
+        },
+        {
+            name: "Home Mid Offer",
+            slug: "home-mid-banner",
+            isBanner: true,
+            bannerImage: "https://dummyimage.com/1200x300/008000/fff&text=Mid+Offer",
+            imageUrl: "https://dummyimage.com/400x400/008000/fff&text=Offer",
+            gender: { set: ["MALE" as const, "FEMALE" as const, "KIDS" as const] },
+        },
+
+        // Normal Collections (Featured, Grid, See All)
+        {
+            name: "New Arrivals",
+            slug: "new-arrivals",
+            isBanner: false,
+            imageUrl: "https://dummyimage.com/400x400/000/fff&text=New",
+            gender: { set: ["MALE" as const, "FEMALE" as const] },
+        },
+        {
+            name: "Best Sellers",
+            slug: "best-sellers",
+            isBanner: false,
+            imageUrl: "https://dummyimage.com/400x400/000/fff&text=Best",
+            gender: { set: ["MALE" as const, "FEMALE" as const] },
+        },
+        {
+            name: "Trending Now",
+            slug: "trending-now",
+            isBanner: false,
+            imageUrl: "https://dummyimage.com/400x400/000/fff&text=Trending",
+            gender: { set: ["MALE" as const, "FEMALE" as const] },
+        },
+        {
+            name: "Summer Collection",
+            slug: "summer",
+            isBanner: false,
+            imageUrl: "https://dummyimage.com/400x400/000/fff&text=Summer",
+            gender: { set: ["MALE" as const, "FEMALE" as const] },
+        },
+        {
+            name: "Winter Wear",
+            slug: "winter",
+            isBanner: false,
+            imageUrl: "https://dummyimage.com/400x400/000/fff&text=Winter",
+            gender: { set: ["MALE" as const, "FEMALE" as const] },
+        },
+        {
+            name: "Festive Edit",
+            slug: "festive",
+            isBanner: false,
+            imageUrl: "https://dummyimage.com/400x400/000/fff&text=Festive",
+            gender: { set: ["MALE" as const, "FEMALE" as const] },
+        },
+        {
+            name: "Street Style",
+            slug: "street-style",
+            isBanner: false,
+            imageUrl: "https://dummyimage.com/400x400/000/fff&text=Street",
+            gender: { set: ["MALE" as const, "FEMALE" as const] },
+        },
+        {
+            name: "Office Wear",
+            slug: "office-wear",
+            isBanner: false,
+            imageUrl: "https://dummyimage.com/400x400/000/fff&text=Office",
+            gender: { set: ["MALE" as const, "FEMALE" as const] },
+        },
+        {
+            name: "Men's Sneakers",
+            slug: "men-sneakers",
+            isBanner: false,
+            imageUrl: "https://dummyimage.com/400x400/000/fff&text=Sneakers",
+            gender: { set: ["MALE" as const] },
+        },
+        {
+            name: "Women's Heels",
+            slug: "women-heels",
+            isBanner: false,
+            imageUrl: "https://dummyimage.com/400x400/000/fff&text=Heels",
+            gender: { set: ["FEMALE" as const] },
+        },
+        {
+            name: "Kids Toys",
+            slug: "kids-toys",
+            isBanner: false,
+            imageUrl: "https://dummyimage.com/400x400/000/fff&text=Toys",
+            gender: { set: ["KIDS" as const] },
+        },
+        {
+            name: "Kids Clothing",
+            slug: "kids-clothing",
+            isBanner: false,
+            imageUrl: "https://dummyimage.com/400x400/000/fff&text=Kids+Clothing",
+            gender: { set: ["KIDS" as const] },
+        },
+    ];
+
+    for (const data of collectionData) {
+        await prisma.collection.upsert({
+            where: { slug: data.slug },
+            update: data,
+            create: data,
+        });
+    }
 
     const collections = await prisma.collection.findMany();
+
+    // ------------------------
+    // COLLECTION PLACEMENTS
+    // ------------------------
+    const placements = [
+        // HOME Placements
+        { slug: "home-top-banner", page: "HOME" as const, section: "TOP_BANNER" as const },
+        { slug: "home-mid-banner", page: "HOME" as const, section: "MID_BANNER" as const },
+        { slug: "new-arrivals", page: "HOME" as const, section: "FEATURED_ROW" as const },
+        { slug: "best-sellers", page: "HOME" as const, section: "FEATURED_ROW" as const },
+        { slug: "trending-now", page: "HOME" as const, section: "GRID_SECTION" as const },
+
+        // MEN Placements
+        {
+            slug: "men-top-banner",
+            page: "MEN" as const,
+            section: "TOP_BANNER" as const,
+            gender: "MALE" as const,
+        },
+        {
+            slug: "men-mid-banner",
+            page: "MEN" as const,
+            section: "MID_BANNER" as const,
+            gender: "MALE" as const,
+        },
+        {
+            slug: "street-style",
+            page: "MEN" as const,
+            section: "FEATURED_ROW" as const,
+            gender: "MALE" as const,
+        },
+        {
+            slug: "office-wear",
+            page: "MEN" as const,
+            section: "FEATURED_ROW" as const,
+            gender: "MALE" as const,
+        },
+        {
+            slug: "men-sneakers",
+            page: "MEN" as const,
+            section: "GRID_SECTION" as const,
+            gender: "MALE" as const,
+        },
+
+        // WOMEN Placements
+        {
+            slug: "women-top-banner",
+            page: "WOMEN" as const,
+            section: "TOP_BANNER" as const,
+            gender: "FEMALE" as const,
+        },
+        {
+            slug: "women-mid-banner",
+            page: "WOMEN" as const,
+            section: "MID_BANNER" as const,
+            gender: "FEMALE" as const,
+        },
+        {
+            slug: "festive",
+            page: "WOMEN" as const,
+            section: "FEATURED_ROW" as const,
+            gender: "FEMALE" as const,
+        },
+        {
+            slug: "summer",
+            page: "WOMEN" as const,
+            section: "FEATURED_ROW" as const,
+            gender: "FEMALE" as const,
+        },
+        {
+            slug: "women-heels",
+            page: "WOMEN" as const,
+            section: "GRID_SECTION" as const,
+            gender: "FEMALE" as const,
+        },
+
+        // KIDS Placements
+        {
+            slug: "kids-top-banner",
+            page: "KIDS" as const,
+            section: "TOP_BANNER" as const,
+            gender: "KIDS" as const,
+        },
+        {
+            slug: "kids-clothing",
+            page: "KIDS" as const,
+            section: "FEATURED_ROW" as const,
+            gender: "KIDS" as const,
+        },
+        {
+            slug: "kids-toys",
+            page: "KIDS" as const,
+            section: "GRID_SECTION" as const,
+            gender: "KIDS" as const,
+        },
+
+        // CATALOG Placements
+        { slug: "new-arrivals", page: "CATALOG" as const, section: "SEE_ALL" as const },
+        { slug: "best-sellers", page: "CATALOG" as const, section: "SEE_ALL" as const },
+
+        // OFFER Placements
+        { slug: "men-mid-banner", page: "OFFER" as const, section: "TOP_BANNER" as const },
+        { slug: "women-mid-banner", page: "OFFER" as const, section: "TOP_BANNER" as const },
+    ];
+
+    await prisma.collectionPlacement.deleteMany({});
+
+    for (const [index, p] of placements.entries()) {
+        const collection = collections.find((c) => c.slug === p.slug);
+        if (collection) {
+            await prisma.collectionPlacement.create({
+                data: {
+                    collectionId: collection.id,
+                    page: p.page,
+                    section: p.section,
+                    gender: p.gender,
+                    displayOrder: index,
+                },
+            });
+        }
+    }
 
     // ------------------------
     // CATEGORY TREE
