@@ -1,14 +1,10 @@
 model Collection {
-    id           String       @id @default(uuid())
-    name         String
-    slug         String       @unique
-    isActive     Boolean      @default(true)
-    displayOrder Int          @default(0)
-    isBanner     Boolean      @default(false)
-    bannerImage  String?
-    imageUrl     String?
-    gender       GenderType[]
+    id       String  @id @default(uuid())
+    name     String
+    slug     String  @unique
+    isActive Boolean @default(true)
 
+    gender   GenderType[]
     products ProductCollection[]
 
     createdAt            DateTime              @default(now())
@@ -34,10 +30,11 @@ model CollectionPlacement {
     collectionId String
     collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
 
+    isBanner Boolean @default(false)
+    imageUrl String?
+
     page    PageType
     section SectionType?
-
-    gender GenderType? // optional (for women banner etc)
 
     displayOrder Int     @default(0)
     isActive     Boolean @default(true)
