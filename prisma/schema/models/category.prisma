@@ -5,10 +5,11 @@ model Category {
     children Category[] @relation("CategoryTree")
 
     name         String
-    slug         String  @unique
+    slug         String       @unique
     imageUrl     String?
-    isActive     Boolean @default(true)
-    displayOrder Int     @default(0)
+    isActive     Boolean      @default(true)
+    displayOrder Int          @default(0)
+    gender       GenderType[]
 
     attributes CategoryAttribute[]
     products   Product[]

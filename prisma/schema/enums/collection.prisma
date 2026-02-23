@@ -1,0 +1,16 @@
+enum PageType {
+    HOME
+    MEN
+    WOMEN
+    KIDS
+    CATALOG
+    OFFER
+}
+
+enum SectionType {
+    TOP_BANNER
+    MID_BANNER
+    FEATURED_ROW
+    GRID_SECTION
+    SEE_ALL
+}
