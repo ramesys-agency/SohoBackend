@@ -91,4 +91,17 @@ export class AuthController {
             next(error);
         }
     };
+
+    getMe = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            res.status(200).json({
+                message: "User fetched successfully",
+                data: {
+                    user: req.user,
+                },
+            });
+        } catch (error) {
+            next(error);
+        }
+    };
 }

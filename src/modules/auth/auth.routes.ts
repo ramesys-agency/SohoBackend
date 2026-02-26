@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { AuthController } from "./auth.controller.js";
+import { authMiddleware } from "../../core/middleware/auth.middleware.js";
 
 export function createAuthRouter(): Router {
     const router = Router();
@@ -10,6 +11,8 @@ export function createAuthRouter(): Router {
     router.post("/refresh", controller.refresh);
     router.post("/forgot-password", controller.forgotPassword);
     router.post("/reset-password", controller.resetPassword);
+
+    router.get("/me", authMiddleware, controller.getMe);
 
     return router;
 }
