@@ -341,46 +341,29 @@ async function main() {
     // ------------------------
     // CATEGORY TREE
     // ------------------------
-    const rootCategories = {
-        clothing: await prisma.category.upsert({
-            where: { slug: "clothing" },
-            update: {},
-            create: { name: "Clothing", slug: "clothing" },
-        }),
-        shoes: await prisma.category.upsert({
-            where: { slug: "shoes" },
-            update: {},
-            create: { name: "Shoes", slug: "shoes" },
-        }),
-        accessories: await prisma.category.upsert({
-            where: { slug: "accessories" },
-            update: {},
-            create: { name: "Accessories", slug: "accessories" },
-        }),
-    };
-
     const categoryDefs = [
-        { name: "Oversized T-Shirts", slug: "oversized-tshirts", parent: rootCategories.clothing },
-        { name: "Regular T-Shirts", slug: "regular-tshirts", parent: rootCategories.clothing },
-        { name: "Casual Shirts", slug: "casual-shirts", parent: rootCategories.clothing },
-        { name: "Formal Shirts", slug: "formal-shirts", parent: rootCategories.clothing },
-        { name: "Kurtas", slug: "kurtas", parent: rootCategories.clothing },
-        { name: "Sarees", slug: "sarees", parent: rootCategories.clothing },
-        { name: "Sneakers", slug: "sneakers", parent: rootCategories.shoes },
-        { name: "Sandals", slug: "sandals", parent: rootCategories.shoes },
-        { name: "Caps", slug: "caps", parent: rootCategories.accessories },
-        { name: "Bags", slug: "bags", parent: rootCategories.accessories },
+        { name: "T-Shirts", slug: "t-shirts", gender: ["MEN", "WOMEN", "KIDS"] as any },
+        { name: "Shirts", slug: "shirts", gender: ["MEN", "WOMEN", "KIDS"] as any },
+        { name: "Sarees", slug: "sarees", gender: ["WOMEN"] as any },
+        { name: "Kurtas", slug: "kurtas", gender: ["MEN", "WOMEN", "KIDS"] as any },
+        { name: "Jeans", slug: "jeans", gender: ["MEN", "WOMEN", "KIDS"] as any },
+        { name: "Sneakers", slug: "sneakers", gender: ["MEN", "WOMEN", "KIDS"] as any },
+        { name: "Sandals", slug: "sandals", gender: ["MEN", "WOMEN", "KIDS"] as any },
+        { name: "Caps", slug: "caps", gender: ["MEN", "WOMEN", "KIDS"] as any },
+        { name: "Bags", slug: "bags", gender: ["MEN", "WOMEN", "KIDS"] as any },
     ];
 
     const categories = [];
     for (const def of categoryDefs) {
         const cat = await prisma.category.upsert({
             where: { slug: def.slug },
-            update: {},
+            update: {
+                gender: def.gender,
+            },
             create: {
                 name: def.name,
                 slug: def.slug,
-                parentId: def.parent.id,
+                gender: def.gender,
             },
         });
         categories.push(cat);

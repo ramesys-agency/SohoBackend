@@ -4,6 +4,7 @@ import { PrismaService } from "../../core/services/index.js";
 import { NotFoundError } from "../../core/errors/http-errors.js";
 import {
     getCategoryIds,
+    getCollectionProductIds,
     getAvailableFilters,
     buildFilterConditions,
     buildSortOrder,
@@ -43,8 +44,11 @@ export class ProductService implements IProductService {
 
     async getAllProducts(query: GetProductsQueryDto): Promise<GetProductsResponseDto> {
         const {
+            categoryId,
             categorySlug,
+            collectionId,
             collectionSlug,
+            isPublished,
             gender,
             minPrice,
             maxPrice,
@@ -56,14 +60,16 @@ export class ProductService implements IProductService {
         } = query;
 
         // 1. Prepare Data for Filters
-        // 1. Prepare Data for Filters
-        const categoryIds = await getCategoryIds(this.prisma.getClient(), categorySlug);
+        const [categoryIds, collectionProductIds] = await Promise.all([
+            getCategoryIds(this.prisma.getClient(), categorySlug, categoryId),
+            getCollectionProductIds(this.prisma.getClient(), collectionSlug, collectionId),
+        ]);
 
-        // 2. Build Query Parts
         // 2. Build Query Parts
         const where = buildFilterConditions({
             categoryIds: categoryIds || undefined,
-            collectionSlug: collectionSlug || undefined,
+            collectionProductIds: collectionProductIds || undefined,
+            isPublished: isPublished !== undefined ? String(isPublished) === "true" : undefined,
             gender: gender || undefined,
             minPrice: minPrice || undefined,
             maxPrice: maxPrice || undefined,
@@ -90,6 +96,7 @@ export class ProductService implements IProductService {
                             stockQty: true,
                             basePrice: true,
                             originalPrice: true,
+                            isDefault: true,
                             images: {
                                 where: {
                                     isPrimary: true,
@@ -103,28 +110,35 @@ export class ProductService implements IProductService {
         ]);
 
         // 4. Get Available Filters
-        // 4. Get Available Filters
         const availableFilters = await getAvailableFilters(
             this.prisma.getClient(),
             categorySlug,
+            categoryId,
             products.length > 0
         );
 
         // 5. Map Response
         const mappedProducts = products.map((p) => {
+            const defaultVariant = p.variants.find((v) => v.isDefault) || p.variants[0];
             const productDto: any = {
                 id: p.id,
                 name: p.name,
+                isPublished: p.isPublished,
                 slug: p.id, // TODO: Add slug field to Product model if needed
-                price: Number(p.variants[0]?.basePrice),
-                originalPrice: Number(p.variants[0]?.originalPrice),
+                price: Number(defaultVariant?.basePrice),
+                originalPrice: Number(defaultVariant?.originalPrice),
                 rating: Number(p.overallRating),
                 reviewCount: p.reviewCount,
-                primaryImage: p.variants[0]?.images[0]?.imageUrl || "",
+                primaryImage:
+                    defaultVariant?.images[0]?.imageUrl || p.variants[0]?.images[0]?.imageUrl,
                 availableColors: Array.from(
                     new Set(
                         p.variants.map((v) =>
-                            JSON.stringify({ colorName: v.colorName, colorValue: v.colorValue })
+                            JSON.stringify({
+                                colorName: v.colorName,
+                                colorValue: v.colorValue,
+                                isDefault: v.isDefault,
+                            })
                         )
                     )
                 )

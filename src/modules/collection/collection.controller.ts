@@ -16,6 +16,8 @@ export class CollectionController {
                 placementPage?: string;
                 placementSection?: string;
                 placementIsActive?: string;
+                page?: string;
+                limit?: string;
             };
             const collections = await this.collectionService.getAllCollections(query);
             res.status(200).json(collections);

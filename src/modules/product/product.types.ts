@@ -27,9 +27,12 @@ export interface UpdateProductDto {
 }
 
 export interface GetProductsQueryDto {
+    categoryId?: string;
     categorySlug?: string;
+    collectionId?: string;
     collectionSlug?: string;
     gender?: string | string[];
+    isPublished?: boolean;
     minPrice?: number;
     maxPrice?: number;
     search?: string;
@@ -48,6 +51,7 @@ export interface ProductResponseDto {
     rating: number;
     reviewCount: number;
     primaryImage: string;
+    isPublished: boolean;
     availableColors: {
         colorName: string;
         colorValue: string;

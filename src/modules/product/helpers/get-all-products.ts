@@ -4,35 +4,87 @@ import type { PrismaClient } from "../../../generated/prisma/index.js";
 
 export const getCategoryIds = async (
     prisma: PrismaClient,
-    categorySlug?: string
+    categorySlug?: string,
+    categoryId?: string
 ): Promise<string[] | undefined> => {
-    if (!categorySlug) return undefined;
+    if (!categorySlug && !categoryId) return undefined;
 
-    const category = await prisma.category.findUnique({
-        where: { slug: categorySlug },
-    });
+    let targetCategoryId = categoryId;
 
-    if (!category) {
-        return ["invalid-category"]; // Return check to ensure 0 results
+    if (!targetCategoryId && categorySlug) {
+        const category = await prisma.category.findUnique({
+            where: { slug: categorySlug },
+        });
+
+        if (!category) {
+            return ["invalid-category"]; // Return check to ensure 0 results
+        }
+        targetCategoryId = category.id;
     }
 
-    return getCategoryDescendants(prisma, category.id);
+    if (!targetCategoryId) {
+        return ["invalid-category"];
+    }
+
+    return getCategoryDescendants(prisma, targetCategoryId);
+};
+
+export const getCollectionProductIds = async (
+    prisma: PrismaClient,
+    collectionSlug?: string,
+    collectionId?: string
+): Promise<string[] | undefined> => {
+    if (!collectionSlug && !collectionId) return undefined;
+
+    let targetCollectionId = collectionId;
+
+    if (!targetCollectionId && collectionSlug) {
+        const collection = await prisma.collection.findUnique({
+            where: { slug: collectionSlug },
+            select: { id: true },
+        });
+
+        if (!collection) {
+            return ["invalid-collection"];
+        }
+        targetCollectionId = collection.id;
+    }
+
+    if (!targetCollectionId) {
+        return ["invalid-collection"];
+    }
+
+    const productCollections = await prisma.productCollection.findMany({
+        where: { collectionId: targetCollectionId },
+        orderBy: { displayOrder: "asc" },
+        select: { productId: true },
+    });
+
+    return productCollections.map((pc) => pc.productId);
 };
 
 export const getAvailableFilters = async (
     prisma: PrismaClient,
     categorySlug?: string,
+    categoryId?: string,
     hasProducts: boolean = false
 ): Promise<any[]> => {
-    if (!categorySlug || !hasProducts) return [];
+    if ((!categorySlug && !categoryId) || !hasProducts) return [];
+
+    let whereClause: any = {};
+    if (categoryId) {
+        whereClause = { id: categoryId };
+    } else if (categorySlug) {
+        whereClause = { slug: categorySlug };
+    }
 
     const category = await prisma.category.findUnique({
-        where: { slug: categorySlug },
+        where: whereClause,
         include: { attributes: true },
     });
 
     return (
-        category?.attributes.map((attr: any) => ({
+        (category as any)?.attributes?.map((attr: any) => ({
             key: attr.key,
             label: attr.label,
             options: Array.isArray(attr.options) ? attr.options : [],
@@ -68,15 +120,24 @@ const getCategoryDescendants = async (
 
 export const buildFilterConditions = (params: {
     categoryIds?: string[] | undefined;
-    collectionSlug?: string | undefined;
+    collectionProductIds?: string[] | undefined;
+    isPublished?: boolean | undefined;
     gender?: string | string[] | undefined;
     minPrice?: number | undefined;
     maxPrice?: number | undefined;
     search?: string | undefined;
     dynamicAttributes?: Record<string, any>;
 }): any => {
-    const { categoryIds, collectionSlug, gender, minPrice, maxPrice, search, dynamicAttributes } =
-        params;
+    const {
+        categoryIds,
+        collectionProductIds,
+        isPublished,
+        gender,
+        minPrice,
+        maxPrice,
+        search,
+        dynamicAttributes,
+    } = params;
     const where: any = {
         isPublished: true,
     };
@@ -91,14 +152,12 @@ export const buildFilterConditions = (params: {
         // If I return undefined -> no filter.
     }
 
-    if (collectionSlug) {
-        where.collections = {
-            some: {
-                collection: {
-                    slug: collectionSlug,
-                },
-            },
-        };
+    if (collectionProductIds) {
+        where.id = { in: collectionProductIds };
+    }
+
+    if (isPublished !== undefined) {
+        where.isPublished = isPublished;
     }
 
     if (minPrice !== undefined || maxPrice !== undefined) {
@@ -114,12 +173,17 @@ export const buildFilterConditions = (params: {
         ];
     }
 
-    if (gender) {
+    if (gender && gender !== "ALL") {
+        const genderMap: Record<string, string> = {
+            MEN: "Men",
+            WOMEN: "Women",
+            KIDS: "Kids",
+        };
         const genders = Array.isArray(gender) ? gender : [gender];
         const genderConditions = genders.map((g) => ({
             attributes: {
                 path: ["gender"],
-                equals: g,
+                equals: genderMap[g.toUpperCase()] ?? g,
             },
         }));
         if (!where.AND) where.AND = [];

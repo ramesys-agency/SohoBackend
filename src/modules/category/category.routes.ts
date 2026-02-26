@@ -5,3 +5,4 @@ export const categoryRoutes = Router();
 const categoryController = new CategoryController();
 
 categoryRoutes.get("/", categoryController.getAllCategories);
+categoryRoutes.get("/page-title", categoryController.getPageTitle);

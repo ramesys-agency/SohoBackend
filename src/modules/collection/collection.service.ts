@@ -13,6 +13,8 @@ export class CollectionService {
         placementPage?: string;
         placementSection?: string;
         placementIsActive?: string;
+        page?: string;
+        limit?: string;
     }) {
         const where: Prisma.CollectionWhereInput = {};
 
@@ -37,41 +39,63 @@ export class CollectionService {
             };
         }
 
-        if (
+        const placementWhere: Prisma.CollectionPlacementWhereInput | undefined =
             query.placementPage ||
             query.placementSection ||
             query.placementIsActive !== undefined ||
             query.isBanner !== undefined
-        ) {
+                ? {
+                      ...(query.placementPage && { page: query.placementPage as PageType }),
+                      ...(query.placementSection && {
+                          section: query.placementSection as SectionType,
+                      }),
+                      ...(query.isBanner !== undefined && {
+                          isBanner: query.isBanner === "true",
+                      }),
+                      ...(query.placementIsActive !== undefined && {
+                          isActive: query.placementIsActive === "true",
+                      }),
+                  }
+                : undefined;
+
+        if (placementWhere) {
             where.collectionPlacements = {
-                some: {
-                    ...(query.placementPage && { page: query.placementPage as PageType }),
-                    ...(query.placementSection && {
-                        section: query.placementSection as SectionType,
-                    }),
-                    ...(query.isBanner !== undefined && {
-                        isBanner: query.isBanner === "true",
-                    }),
-                    ...(query.placementIsActive !== undefined && {
-                        isActive: query.placementIsActive === "true",
-                    }),
-                },
+                some: placementWhere,
             };
         }
 
-        const collections = await this.prisma.getClient().collection.findMany({
-            where,
-            orderBy: { createdAt: "desc" },
-            include: {
-                collectionPlacements: {
-                    orderBy: { displayOrder: "asc" },
+        const page = parseInt(query.page || "1", 10);
+        const limit = parseInt(query.limit || "10", 10);
+        const skip = (page - 1) * limit;
+
+        const [collections, total] = await Promise.all([
+            this.prisma.getClient().collection.findMany({
+                where,
+                orderBy: { createdAt: "desc" },
+                include: {
+                    collectionPlacements: {
+                        ...(placementWhere ? { where: placementWhere } : {}),
+                        orderBy: { displayOrder: "asc" },
+                        include: {
+                            collection: true,
+                        },
+                    },
                 },
-            },
-        });
+                skip,
+                take: limit,
+            }),
+            this.prisma.getClient().collection.count({ where }),
+        ]);
 
         return {
             success: true,
             data: collections,
+            meta: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit),
+            },
         };
     }
 }
