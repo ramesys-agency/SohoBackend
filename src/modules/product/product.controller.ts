@@ -10,8 +10,9 @@ export class ProductController {
         try {
             const query = req.query as unknown as any; // Cast to any to assume shape, or validate properly
             // In a real app, use class-validator or zod to validate query params
+            const userId = req.user?.id;
 
-            const products = await this.productService.getAllProducts(query);
+            const products = await this.productService.getAllProducts(query, userId);
             logger.info("Products fetched successfully", { count: products.products.length });
 
             res.status(200).json(products);
@@ -23,11 +24,13 @@ export class ProductController {
     getProductById = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
         try {
             const { productId } = req.params;
+            const userId = req.user?.id;
+
             if (!productId) {
                 throw new Error("Product ID is required");
             }
 
-            const product = await this.productService.getProductById(productId as string);
+            const product = await this.productService.getProductById(productId as string, userId);
             logger.info("Product fetched successfully", { productId });
 
             res.status(200).json(product);

@@ -46,3 +46,34 @@ export const authMiddleware: RequestHandler = async (req, res, next) => {
         next(error);
     }
 };
+
+export const optionalAuthMiddleware: RequestHandler = async (req, res, next) => {
+    try {
+        let token: string | undefined;
+
+        const authHeader = req.headers.authorization;
+        if (authHeader && authHeader.startsWith("Bearer ")) {
+            token = authHeader.split(" ")[1];
+        }
+
+        if (!token) {
+            return next();
+        }
+
+        let payload: JwtPayload;
+        try {
+            payload = jwt.verify(token, config.auth.jwtSecret) as JwtPayload;
+        } catch {
+            return next();
+        }
+
+        const user = await authService.verifyAndGetUser(payload.userId, payload.role);
+        if (user) {
+            req.user = user;
+        }
+
+        next();
+    } catch {
+        next();
+    }
+};

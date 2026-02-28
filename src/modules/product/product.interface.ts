@@ -1,6 +1,6 @@
 import type { GetProductsQueryDto, GetProductsResponseDto } from "./product.types.js";
 
 export interface IProductService {
-    getAllProducts(query: GetProductsQueryDto): Promise<GetProductsResponseDto>;
-    getProductById(productId: string): Promise<any>;
+    getAllProducts(query: GetProductsQueryDto, userId?: string): Promise<GetProductsResponseDto>;
+    getProductById(productId: string, userId?: string): Promise<any>;
 }

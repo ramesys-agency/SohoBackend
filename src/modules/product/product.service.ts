@@ -14,7 +14,7 @@ import {
 export class ProductService implements IProductService {
     private prisma: PrismaService = new PrismaService();
 
-    async getProductById(productId: string): Promise<any> {
+    async getProductById(productId: string, userId?: string): Promise<any> {
         const product = await this.prisma.getClient().product.findUnique({
             where: { id: productId },
             include: {
@@ -39,10 +39,28 @@ export class ProductService implements IProductService {
             throw new NotFoundError("Product not found");
         }
 
+        if (userId) {
+            const variantIds = product.variants.map((v) => v.id);
+            const wishlistedItems = await this.prisma.getClient().wishlist.findMany({
+                where: {
+                    userId,
+                    variantId: { in: variantIds },
+                },
+            });
+            const wishlistedVariantIds = new Set(wishlistedItems.map((w) => w.variantId));
+            product.variants = product.variants.map((v) => ({
+                ...v,
+                isWishlisted: wishlistedVariantIds.has(v.id),
+            }));
+        }
+
         return product;
     }
 
-    async getAllProducts(query: GetProductsQueryDto): Promise<GetProductsResponseDto> {
+    async getAllProducts(
+        query: GetProductsQueryDto,
+        userId?: string
+    ): Promise<GetProductsResponseDto> {
         const {
             categoryId,
             categorySlug,
@@ -91,6 +109,7 @@ export class ProductService implements IProductService {
                 include: {
                     variants: {
                         select: {
+                            id: true,
                             colorName: true,
                             colorValue: true,
                             stockQty: true,
@@ -117,9 +136,34 @@ export class ProductService implements IProductService {
             products.length > 0
         );
 
+        let wishlistedVariantIds = new Set<string>();
+        if (userId && products.length > 0) {
+            const allVariantIds = products.flatMap((p) => p.variants.map((v) => v.id));
+            const wishlistedItems = await this.prisma.getClient().wishlist.findMany({
+                where: {
+                    userId,
+                    variantId: { in: allVariantIds },
+                },
+            });
+            wishlistedVariantIds = new Set(wishlistedItems.map((w) => w.variantId));
+        }
+
         // 5. Map Response
         const mappedProducts = products.map((p) => {
             const defaultVariant = p.variants.find((v) => v.isDefault) || p.variants[0];
+            const colorMap = new Map();
+            p.variants.forEach((v) => {
+                if (v.colorName && v.colorValue) {
+                    const key = `${v.colorName}-${v.colorValue}`;
+                    if (!colorMap.has(key)) {
+                        colorMap.set(key, {
+                            colorName: v.colorName,
+                            colorValue: v.colorValue,
+                        });
+                    }
+                }
+            });
+
             const productDto: any = {
                 id: p.id,
                 name: p.name,
@@ -131,19 +175,9 @@ export class ProductService implements IProductService {
                 reviewCount: p.reviewCount,
                 primaryImage:
                     defaultVariant?.images[0]?.imageUrl || p.variants[0]?.images[0]?.imageUrl,
-                availableColors: Array.from(
-                    new Set(
-                        p.variants.map((v) =>
-                            JSON.stringify({
-                                colorName: v.colorName,
-                                colorValue: v.colorValue,
-                                isDefault: v.isDefault,
-                            })
-                        )
-                    )
-                )
-                    .map((s) => JSON.parse(s))
-                    .filter((c) => c.colorName && c.colorValue),
+                availableColors: Array.from(colorMap.values()),
+                variantId: defaultVariant?.id,
+                isWishlisted: defaultVariant ? wishlistedVariantIds.has(defaultVariant.id) : false,
                 inStock: p.variants.some((v) => v.stockQty > 0),
             };
 

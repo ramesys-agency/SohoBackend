@@ -56,6 +56,8 @@ export interface ProductResponseDto {
         colorName: string;
         colorValue: string;
     }[];
+    variantId?: string;
+    isWishlisted?: boolean;
     inStock: boolean;
 }
 
