@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import { logger } from "../../config/logger.js";
 import { ProductService } from "./product.service.js";
 import type { IProductService } from "./product.interface.js";
+import type { SearchProductsQueryDto } from "./product.types.js";
 
 export class ProductController {
     private productService: IProductService = new ProductService();
@@ -34,6 +35,31 @@ export class ProductController {
             logger.info("Product fetched successfully", { productId });
 
             res.status(200).json(product);
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    searchProducts = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+        try {
+            const { q, limit } = req.query as { q?: string; limit?: string };
+            const userId = req.user?.id;
+
+            if (!q || q.trim().length === 0) {
+                res.status(400).json({
+                    success: false,
+                    message: "Query parameter 'q' is required",
+                });
+                return;
+            }
+
+            const searchQuery: SearchProductsQueryDto = { q: q.trim() };
+            if (limit !== undefined) searchQuery.limit = Number(limit);
+
+            const result = await this.productService.searchProducts(searchQuery, userId);
+
+            logger.info("Product search completed", { q, count: result.count });
+            res.status(200).json(result);
         } catch (error) {
             next(error);
         }

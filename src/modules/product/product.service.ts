@@ -1,4 +1,10 @@
-import type { GetProductsQueryDto, GetProductsResponseDto } from "./product.types.js";
+import type {
+    GetProductsQueryDto,
+    GetProductsResponseDto,
+    SearchProductsQueryDto,
+    SearchProductsResponseDto,
+    SearchProductResultDto,
+} from "./product.types.js";
 import type { IProductService } from "./product.interface.js";
 import { PrismaService } from "../../core/services/index.js";
 import { NotFoundError } from "../../core/errors/http-errors.js";
@@ -223,6 +229,85 @@ export class ProductService implements IProductService {
                 available: availableFilters,
                 applied: { ...query },
             },
+            products: mappedProducts,
+        };
+    }
+
+    async searchProducts(
+        query: SearchProductsQueryDto,
+        userId?: string
+    ): Promise<SearchProductsResponseDto> {
+        const { q, limit = 10 } = query;
+
+        if (!q || q.trim().length === 0) {
+            return { success: true, query: q ?? "", count: 0, products: [] };
+        }
+
+        const searchTerm = q.trim();
+
+        const products = (await this.prisma.getClient().product.findMany({
+            where: {
+                isPublished: true,
+                OR: [
+                    { name: { contains: searchTerm, mode: "insensitive" } },
+                    { description: { contains: searchTerm, mode: "insensitive" } },
+                ],
+            },
+            take: Number(limit),
+            orderBy: { overallRating: "desc" },
+            include: {
+                variants: {
+                    select: {
+                        id: true,
+                        basePrice: true,
+                        originalPrice: true,
+                        stockQty: true,
+                        isDefault: true,
+                        images: {
+                            where: { isPrimary: true },
+                            take: 1,
+                            select: { imageUrl: true },
+                        },
+                    },
+                },
+            },
+        })) as any[];
+
+        // Optionally enrich with wishlist info
+        let wishlistedVariantIds = new Set<string>();
+        if (userId && products.length > 0) {
+            const allVariantIds = products.flatMap((p: any) => p.variants.map((v: any) => v.id));
+            const wishlisted = await this.prisma.getClient().wishlist.findMany({
+                where: { userId, variantId: { in: allVariantIds } },
+                select: { variantId: true },
+            });
+            wishlistedVariantIds = new Set(wishlisted.map((w) => w.variantId));
+        }
+
+        const mappedProducts: SearchProductResultDto[] = products.map((p: any) => {
+            const defaultVariant = p.variants.find((v: any) => v.isDefault) ?? p.variants[0];
+            const result: SearchProductResultDto = {
+                id: p.id,
+                name: p.name,
+                slug: p.id,
+                price: Number(defaultVariant?.basePrice ?? 0),
+                primaryImage: defaultVariant?.images[0]?.imageUrl,
+                variantId: defaultVariant?.id,
+                isWishlisted: defaultVariant ? wishlistedVariantIds.has(defaultVariant.id) : false,
+                inStock: p.variants.some((v: any) => v.stockQty > 0),
+                rating: Number(p.overallRating),
+                reviewCount: p.reviewCount,
+            };
+            if (defaultVariant?.originalPrice) {
+                result.originalPrice = Number(defaultVariant.originalPrice);
+            }
+            return result;
+        });
+
+        return {
+            success: true,
+            query: searchTerm,
+            count: mappedProducts.length,
             products: mappedProducts,
         };
     }

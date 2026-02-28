@@ -13,6 +13,7 @@ export function registerProductModule(): Router {
     const controller = new ProductController();
 
     router.get("/", optionalAuthMiddleware, controller.getAllProducts);
+    router.get("/search", optionalAuthMiddleware, controller.searchProducts);
     router.get("/:productId", optionalAuthMiddleware, controller.getProductById);
 
     return router;

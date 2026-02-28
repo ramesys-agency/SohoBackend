@@ -81,3 +81,29 @@ export interface GetProductsResponseDto {
     };
     products: ProductResponseDto[];
 }
+
+export interface SearchProductsQueryDto {
+    q: string;
+    limit?: number;
+}
+
+export interface SearchProductResultDto {
+    id: string;
+    name: string;
+    slug: string;
+    price: number;
+    originalPrice?: number;
+    primaryImage?: string;
+    variantId?: string;
+    isWishlisted?: boolean;
+    inStock: boolean;
+    rating: number;
+    reviewCount: number;
+}
+
+export interface SearchProductsResponseDto {
+    success: boolean;
+    query: string;
+    count: number;
+    products: SearchProductResultDto[];
+}
