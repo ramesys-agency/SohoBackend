@@ -7,6 +7,7 @@ export function registerWishlistRoutes(): Router {
     const controller = new WishlistController();
 
     router.get("/", authMiddleware, controller.toggleWishlist);
+    router.get("/list", authMiddleware, controller.getWishlistItems);
 
     return router;
 }

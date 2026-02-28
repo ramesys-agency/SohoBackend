@@ -30,4 +30,20 @@ export class WishlistController {
             next(error);
         }
     };
+
+    getWishlistItems = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+        try {
+            const userId = req.user?.id;
+
+            if (!userId) {
+                res.status(401).json({ message: "User not authenticated" });
+                return;
+            }
+
+            const items = await this.wishlistService.getWishlistItems(userId);
+            res.status(200).json({ message: "Wishlist retrieved successfully", data: items });
+        } catch (error) {
+            next(error);
+        }
+    };
 }

@@ -44,4 +44,23 @@ export class WishlistService {
         logger.info("Item added to wishlist", { id: wishlistItem.id, userId, variantId });
         return { action: "added", item: wishlistItem };
     }
+
+    async getWishlistItems(userId: string) {
+        const items = await this.prisma.getClient().wishlist.findMany({
+            where: { userId },
+            include: {
+                variant: {
+                    include: {
+                        product: true,
+                        images: true,
+                    },
+                },
+            },
+            orderBy: {
+                createdAt: "desc",
+            },
+        });
+
+        return items;
+    }
 }

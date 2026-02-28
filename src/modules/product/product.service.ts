@@ -41,16 +41,28 @@ export class ProductService implements IProductService {
 
         if (userId) {
             const variantIds = product.variants.map((v) => v.id);
-            const wishlistedItems = await this.prisma.getClient().wishlist.findMany({
-                where: {
-                    userId,
-                    variantId: { in: variantIds },
-                },
-            });
+            const [wishlistedItems, cartItems] = await Promise.all([
+                this.prisma.getClient().wishlist.findMany({
+                    where: {
+                        userId,
+                        variantId: { in: variantIds },
+                    },
+                }),
+                this.prisma.getClient().cartItem.findMany({
+                    where: {
+                        userId,
+                        variantId: { in: variantIds },
+                    },
+                }),
+            ]);
+
             const wishlistedVariantIds = new Set(wishlistedItems.map((w) => w.variantId));
+            const cartVariantIds = new Set(cartItems.map((c) => c.variantId));
+
             product.variants = product.variants.map((v) => ({
                 ...v,
-                isWishlisted: wishlistedVariantIds.has(v.id),
+                isWishlisted: wishlistedVariantIds.has(v.id) || false,
+                isAddedToCart: cartVariantIds.has(v.id) || false,
             }));
         }
 
@@ -137,15 +149,25 @@ export class ProductService implements IProductService {
         );
 
         let wishlistedVariantIds = new Set<string>();
+        let cartVariantIds = new Set<string>();
         if (userId && products.length > 0) {
             const allVariantIds = products.flatMap((p) => p.variants.map((v) => v.id));
-            const wishlistedItems = await this.prisma.getClient().wishlist.findMany({
-                where: {
-                    userId,
-                    variantId: { in: allVariantIds },
-                },
-            });
+            const [wishlistedItems, cartItems] = await Promise.all([
+                this.prisma.getClient().wishlist.findMany({
+                    where: {
+                        userId,
+                        variantId: { in: allVariantIds },
+                    },
+                }),
+                this.prisma.getClient().cartItem.findMany({
+                    where: {
+                        userId,
+                        variantId: { in: allVariantIds },
+                    },
+                }),
+            ]);
             wishlistedVariantIds = new Set(wishlistedItems.map((w) => w.variantId));
+            cartVariantIds = new Set(cartItems.map((c) => c.variantId));
         }
 
         // 5. Map Response
@@ -178,6 +200,7 @@ export class ProductService implements IProductService {
                 availableColors: Array.from(colorMap.values()),
                 variantId: defaultVariant?.id,
                 isWishlisted: defaultVariant ? wishlistedVariantIds.has(defaultVariant.id) : false,
+                isAddedToCart: defaultVariant ? cartVariantIds.has(defaultVariant.id) : false,
                 inStock: p.variants.some((v) => v.stockQty > 0),
             };
 

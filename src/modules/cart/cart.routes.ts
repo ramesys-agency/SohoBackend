@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { CartController } from "./cart.controller.js";
 import { authMiddleware } from "../../core/middleware/auth.middleware.js";
+import { CartController } from "./cart.controller.js";
 
 export function registerCartModule(): Router {
     const router = Router();
@@ -9,6 +9,7 @@ export function registerCartModule(): Router {
     router.get("/", authMiddleware, controller.getAllItems);
     router.get("/add", authMiddleware, controller.addItem);
     router.get("/delete", authMiddleware, controller.deleteItem);
+    router.get("/decrement", authMiddleware, controller.decrementItem);
 
     return router;
 }

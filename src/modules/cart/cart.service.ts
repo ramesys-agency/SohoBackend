@@ -53,6 +53,37 @@ export class CartService {
         });
     }
 
+    async decrementItem(userId: string, variantId: string) {
+        const existingItem = await this.prisma.getClient().cartItem.findFirst({
+            where: {
+                userId,
+                variantId,
+            },
+        });
+
+        if (!existingItem) {
+            return null;
+        }
+
+        if (existingItem.quantity > 1) {
+            return await this.prisma.getClient().cartItem.update({
+                where: {
+                    id: existingItem.id,
+                },
+                data: {
+                    quantity: existingItem.quantity - 1,
+                },
+            });
+        }
+
+        // If quantity is 1 or less, remove it completely
+        return await this.prisma.getClient().cartItem.delete({
+            where: {
+                id: existingItem.id,
+            },
+        });
+    }
+
     async getAllItems(userId: string) {
         return await this.prisma.getClient().cartItem.findMany({
             where: {
@@ -62,6 +93,7 @@ export class CartService {
                 variant: {
                     include: {
                         product: true,
+                        images: true,
                     },
                 },
             },

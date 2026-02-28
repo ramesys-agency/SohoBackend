@@ -52,6 +52,28 @@ export class CartController {
         }
     };
 
+    decrementItem = async (req: Request, res: Response): Promise<void> => {
+        try {
+            const user = (req as any).user;
+            const userId = user.id;
+            const { variantId } = req.query;
+
+            if (!variantId || typeof variantId !== "string") {
+                res.status(400).json({ message: "variantId is required and must be a string" });
+                return;
+            }
+
+            await this.service.decrementItem(userId, variantId);
+            res.json({
+                message: "Item decremented successfully",
+                data: null,
+            });
+        } catch (error) {
+            console.error("Error decrementing item from cart:", error);
+            res.status(500).json({ message: "Failed to decrement item in cart" });
+        }
+    };
+
     getAllItems = async (req: Request, res: Response): Promise<void> => {
         try {
             const user = (req as any).user;
