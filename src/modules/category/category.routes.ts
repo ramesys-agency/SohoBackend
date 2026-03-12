@@ -6,3 +6,8 @@ const categoryController = new CategoryController();
 
 categoryRoutes.get("/", categoryController.getAllCategories);
 categoryRoutes.get("/page-title", categoryController.getPageTitle);
+
+// Admin Routes
+categoryRoutes.post("/", categoryController.createCategory);
+categoryRoutes.get("/parents", categoryController.getParentCategories);
+categoryRoutes.get("/hierarchy", categoryController.getCategoryHierarchy);

@@ -25,4 +25,20 @@ export class CollectionController {
             next(error);
         }
     };
+
+    addProductsToCollection = async (
+        req: Request,
+        res: Response,
+        next: NextFunction
+    ): Promise<void> => {
+        try {
+            const id = req.params.id as string;
+            const productIds = req.body.productIds as string[];
+
+            const result = await this.collectionService.addProductsToCollection(id, productIds);
+            res.status(200).json(result);
+        } catch (error) {
+            next(error);
+        }
+    };
 }

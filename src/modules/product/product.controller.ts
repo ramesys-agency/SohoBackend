@@ -3,9 +3,30 @@ import { logger } from "../../config/logger.js";
 import { ProductService } from "./product.service.js";
 import type { IProductService } from "./product.interface.js";
 import type { SearchProductsQueryDto } from "./product.types.js";
+import { createProductSchema } from "./product.schema.js";
 
 export class ProductController {
     private productService: IProductService = new ProductService();
+
+    createProduct = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+        try {
+            // Validate payload with Zod
+            const validatedData = createProductSchema.parse(req.body);
+
+            // Create product using the service
+            const createdProduct = await this.productService.createProduct(validatedData);
+
+            logger.info("Product created successfully", { productId: createdProduct.id });
+
+            res.status(201).json({
+                success: true,
+                message: "Product created successfully",
+                data: createdProduct,
+            });
+        } catch (error) {
+            next(error);
+        }
+    };
 
     getAllProducts = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
         try {

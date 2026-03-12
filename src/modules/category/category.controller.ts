@@ -21,6 +21,38 @@ export class CategoryController {
         }
     };
 
+    getParentCategories = async (
+        req: Request,
+        res: Response,
+        next: NextFunction
+    ): Promise<void> => {
+        try {
+            const query = req.query as {
+                gender?: GenderType;
+            };
+            const categories = await this.categoryService.getParentCategories(query);
+            res.status(200).json(categories);
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    createCategory = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+        try {
+            const data = req.body as {
+                name: string;
+                gender: GenderType[];
+                parentId?: string;
+                imageUrl?: string;
+                attributes?: Record<string, string> | any[];
+            };
+            const result = await this.categoryService.createCategory(data);
+            res.status(201).json(result);
+        } catch (error) {
+            next(error);
+        }
+    };
+
     getPageTitle = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
         try {
             const query = req.query as {
@@ -29,6 +61,24 @@ export class CategoryController {
                 categoryId?: string;
             };
             const result = await this.categoryService.getPageTitle(query);
+            res.status(200).json(result);
+        } catch (error) {
+            next(error);
+        }
+    };
+    getCategoryHierarchy = async (
+        req: Request,
+        res: Response,
+        next: NextFunction
+    ): Promise<void> => {
+        try {
+            const query = req.query as {
+                isActive?: string;
+                gender?: GenderType;
+                page?: string;
+                limit?: string;
+            };
+            const result = await this.categoryService.getCategoryHierarchy(query);
             res.status(200).json(result);
         } catch (error) {
             next(error);

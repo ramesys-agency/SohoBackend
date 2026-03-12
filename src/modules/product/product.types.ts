@@ -1,30 +1,34 @@
-export interface CreateProductDto {
-    name: string;
-    description: string;
-    price: number;
-    stock: number;
-    image: string;
-    category: string;
-    brand: string;
-    rating: number;
-    numReviews: number;
-    isFeatured: boolean;
-    banner: string;
+export interface CreateProductVariantImageDto {
+    imageUrl: string;
+    isPrimary?: boolean;
+    displayOrder?: number;
+    colorRef?: string;
 }
 
-export interface UpdateProductDto {
-    name?: string;
-    description?: string;
-    price?: number;
-    stock?: number;
-    image?: string;
-    category?: string;
-    brand?: string;
-    rating?: number;
-    numReviews?: number;
-    isFeatured?: boolean;
-    banner?: string;
+export interface CreateProductVariantDto {
+    sku: string;
+    size?: string;
+    colorName?: string;
+    colorValue?: string;
+    stockQty?: number;
+    basePrice: number;
+    originalPrice?: number;
+    isDefault?: boolean;
+    images: CreateProductVariantImageDto[];
 }
+
+export interface CreateProductDto {
+    name: string;
+    description?: string;
+    categoryId: string;
+    collectionIds?: string[]; // Array of UUIDs
+    attributes: Record<string, any>;
+    gender?: ("MEN" | "WOMEN" | "KIDS")[];
+    isPublished?: boolean;
+    variants: CreateProductVariantDto[];
+}
+
+export type UpdateProductDto = Partial<CreateProductDto>;
 
 export interface GetProductsQueryDto {
     categoryId?: string;

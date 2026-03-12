@@ -80,6 +80,9 @@ export class CollectionService {
                             collection: true,
                         },
                     },
+                    _count: {
+                        select: { products: true },
+                    },
                 },
                 skip,
                 take: limit,
@@ -87,15 +90,52 @@ export class CollectionService {
             this.prisma.getClient().collection.count({ where }),
         ]);
 
+        const data = collections.map((col: any) => {
+            const { _count, ...rest } = col;
+            return {
+                ...rest,
+                productCount: _count?.products || 0,
+            };
+        });
+
         return {
             success: true,
-            data: collections,
+            data,
             meta: {
                 total,
                 page,
                 limit,
                 totalPages: Math.ceil(total / limit),
             },
+        };
+    }
+
+    async addProductsToCollection(collectionId: string, productIds: string[]) {
+        if (!productIds || !Array.isArray(productIds) || productIds.length === 0) {
+            throw new Error("Product IDs are required and must be an array");
+        }
+
+        const collection = await this.prisma.getClient().collection.findUnique({
+            where: { id: collectionId },
+        });
+
+        if (!collection) {
+            throw new Error("Collection not found");
+        }
+
+        const data = productIds.map((productId) => ({
+            collectionId,
+            productId,
+        }));
+
+        await this.prisma.getClient().productCollection.createMany({
+            data,
+            skipDuplicates: true,
+        });
+
+        return {
+            success: true,
+            message: "Products added to collection successfully",
         };
     }
 }

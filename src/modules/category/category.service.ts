@@ -1,5 +1,6 @@
 import { PrismaService } from "../../core/services/index.js";
 import { GenderType } from "../../generated/prisma/index.js";
+import type { Prisma } from "../../generated/prisma/index.js";
 
 export class CategoryService {
     private prisma = new PrismaService();
@@ -59,6 +60,96 @@ export class CategoryService {
                 limit,
                 totalPages: Math.ceil(total / limit),
             },
+        };
+    }
+
+    async getParentCategories(query: { gender?: GenderType }) {
+        const where: Prisma.CategoryWhereInput = {
+            parentId: null,
+        };
+
+        if (query.gender) {
+            where.gender = { has: query.gender };
+        }
+
+        const categories = await this.prisma.getClient().category.findMany({
+            where,
+            include: {
+                children: true,
+            },
+            orderBy: {
+                displayOrder: "asc",
+            },
+        });
+
+        return {
+            success: true,
+            data: categories,
+        };
+    }
+
+    async createCategory(data: {
+        name: string;
+        gender: GenderType[];
+        parentId?: string;
+        imageUrl?: string;
+        attributes?: Record<string, any> | any[];
+    }) {
+        const slug = data.name
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/(^-|-$)+/g, "");
+
+        let finalSlug = slug;
+        let counter = 1;
+        while (await this.prisma.getClient().category.findUnique({ where: { slug: finalSlug } })) {
+            finalSlug = `${slug}-${counter}`;
+            counter++;
+        }
+
+        // Map attributes from either array or key-value object
+        let attributesCreateData: any[] = [];
+        if (data.attributes) {
+            if (Array.isArray(data.attributes)) {
+                attributesCreateData = data.attributes.map((attr) => ({
+                    key: attr.key,
+                    label: attr.label || attr.key,
+                    type: attr.type || "text",
+                    options: attr.options || null,
+                    isFilterable: attr.isFilterable || false,
+                }));
+            } else {
+                attributesCreateData = Object.entries(data.attributes).map(([key, value]) => ({
+                    key: key,
+                    label: String(value), // Assuming value is the label
+                    type: "text",
+                    isFilterable: false,
+                }));
+            }
+        }
+
+        const category = await this.prisma.getClient().category.create({
+            data: {
+                name: data.name,
+                slug: finalSlug,
+                gender: data.gender,
+                parentId: data.parentId || null,
+                imageUrl: data.imageUrl || null,
+                ...(attributesCreateData.length > 0 && {
+                    attributes: {
+                        create: attributesCreateData,
+                    },
+                }),
+            },
+            include: {
+                attributes: true,
+            },
+        });
+
+        return {
+            success: true,
+            data: category,
+            message: "Category created successfully",
         };
     }
 
@@ -123,6 +214,89 @@ export class CategoryService {
         return {
             success: false,
             message: "Provide one of: collectionId, collectionSlug, or categoryId",
+        };
+    }
+
+    async getCategoryHierarchy(query: {
+        isActive?: string;
+        gender?: GenderType;
+        page?: string;
+        limit?: string;
+    }) {
+        const where: Prisma.CategoryWhereInput = {
+            parentId: null,
+        };
+
+        if (query.isActive !== undefined) {
+            where.isActive = query.isActive === "true";
+        }
+
+        if (query.gender) {
+            where.gender = { has: query.gender };
+        }
+
+        const page = parseInt(query.page || "1", 10);
+        const limit = parseInt(query.limit || "10", 10);
+        const skip = (page - 1) * limit;
+
+        const childWhere: Prisma.CategoryWhereInput = {};
+        if (query.isActive !== undefined) {
+            childWhere.isActive = query.isActive === "true";
+        }
+        if (query.gender) {
+            childWhere.gender = { has: query.gender };
+        }
+
+        const childrenInclude = {
+            _count: { select: { products: true } },
+        } as const;
+
+        const childrenArgs = {
+            include: childrenInclude,
+            orderBy: { displayOrder: "asc" as const },
+            ...(Object.keys(childWhere).length ? { where: childWhere } : {}),
+        };
+
+        const [rootCategories, total] = await Promise.all([
+            this.prisma.getClient().category.findMany({
+                where,
+                include: {
+                    _count: {
+                        select: { products: true },
+                    },
+                    children: childrenArgs,
+                },
+                orderBy: { displayOrder: "asc" },
+                skip,
+                take: limit,
+            }),
+            this.prisma.getClient().category.count({ where }),
+        ]);
+
+        const data = rootCategories.map((cat: any) => {
+            const { _count, children, ...rest } = cat;
+            return {
+                ...rest,
+                totalProducts: (_count as { products: number }).products,
+                children: (children as any[]).map((child: any) => {
+                    const { _count: childCount, ...childRest } = child;
+                    return {
+                        ...childRest,
+                        totalProducts: (childCount as { products: number }).products,
+                    };
+                }),
+            };
+        });
+
+        return {
+            success: true,
+            data,
+            meta: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit),
+            },
         };
     }
 }

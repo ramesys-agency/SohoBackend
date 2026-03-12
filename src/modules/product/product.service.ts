@@ -4,6 +4,7 @@ import type {
     SearchProductsQueryDto,
     SearchProductsResponseDto,
     SearchProductResultDto,
+    CreateProductDto,
 } from "./product.types.js";
 import type { IProductService } from "./product.interface.js";
 import { PrismaService } from "../../core/services/index.js";
@@ -19,6 +20,85 @@ import {
 
 export class ProductService implements IProductService {
     private prisma: PrismaService = new PrismaService();
+
+    async createProduct(data: CreateProductDto): Promise<any> {
+        return await this.prisma.getClient().$transaction(async (tx) => {
+            // 1. Validate Category
+            const category = await tx.category.findUnique({
+                where: { id: data.categoryId },
+            });
+            if (!category) {
+                throw new NotFoundError("Category not found");
+            }
+
+            // 2. Create Base Product
+            const createdProduct = await tx.product.create({
+                data: {
+                    name: data.name,
+                    description: data.description || null,
+                    categoryId: data.categoryId,
+                    attributes: data.attributes,
+                    gender: data.gender || [],
+                    isPublished: data.isPublished || false,
+                },
+            });
+
+            // 3. Create ProductCollections
+            if (data.collectionIds && data.collectionIds.length > 0) {
+                // Determine order or logic if necessary, here we just insert.
+                const productCollectionsData = data.collectionIds.map((collectionId) => ({
+                    productId: createdProduct.id,
+                    collectionId: collectionId,
+                }));
+
+                await tx.productCollection.createMany({
+                    data: productCollectionsData,
+                    skipDuplicates: true, // in case of duplicate IDs
+                });
+            }
+
+            // 4. Create Variants and Associated Data (Images)
+            for (const variant of data.variants) {
+                if (variant.basePrice === undefined || variant.basePrice === null) {
+                    throw new Error("Variant basePrice is required");
+                }
+
+                await tx.productVariant.create({
+                    data: {
+                        productId: createdProduct.id,
+                        sku: variant.sku,
+                        size: variant.size || null,
+                        colorName: variant.colorName || null,
+                        colorValue: variant.colorValue || null,
+                        stockQty: variant.stockQty || 0,
+                        basePrice: variant.basePrice,
+                        originalPrice: variant.originalPrice || null,
+                        isDefault: variant.isDefault || false,
+                        images: {
+                            create: variant.images.map((image) => ({
+                                imageUrl: image.imageUrl,
+                                isPrimary: image.isPrimary || false,
+                                displayOrder: image.displayOrder || 0,
+                                colorRef: image.colorRef || null,
+                            })),
+                        },
+                    },
+                });
+            }
+
+            // 5. Build Initial Price History
+            const defaultVariant = data.variants.find((v) => v.isDefault) || data.variants[0];
+            await tx.productPriceHistory.create({
+                data: {
+                    productId: createdProduct.id,
+                    price: defaultVariant?.basePrice ?? 0,
+                    effectiveFrom: new Date(),
+                },
+            });
+
+            return createdProduct;
+        });
+    }
 
     async getProductById(productId: string, userId?: string): Promise<any> {
         const product = await this.prisma.getClient().product.findUnique({

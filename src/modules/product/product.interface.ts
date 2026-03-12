@@ -12,4 +12,5 @@ export interface IProductService {
         query: SearchProductsQueryDto,
         userId?: string
     ): Promise<SearchProductsResponseDto>;
+    createProduct(data: any): Promise<any>;
 }
