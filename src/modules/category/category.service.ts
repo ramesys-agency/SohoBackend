@@ -153,6 +153,105 @@ export class CategoryService {
         };
     }
 
+    async updateCategory(
+        id: string,
+        data: {
+            name?: string;
+            gender?: GenderType[];
+            parentId?: string;
+            imageUrl?: string;
+            isActive?: boolean;
+            displayOrder?: number;
+            attributes?: Record<string, any> | any[];
+        }
+    ) {
+        const existing = await this.prisma.getClient().category.findUnique({ where: { id } });
+        if (!existing) {
+            throw new Error("Category not found");
+        }
+
+        // Build update payload
+        const updateData: any = {};
+        if (data.name !== undefined) {
+            updateData.name = data.name;
+            // Regenerate slug if name changes
+            const slug = data.name
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, "-")
+                .replace(/(^-|-$)+/g, "");
+            let finalSlug = slug;
+            let counter = 1;
+            while (
+                await this.prisma
+                    .getClient()
+                    .category.findFirst({ where: { slug: finalSlug, id: { not: id } } })
+            ) {
+                finalSlug = `${slug}-${counter++}`;
+            }
+            updateData.slug = finalSlug;
+        }
+        if (data.gender !== undefined) updateData.gender = data.gender;
+        if (data.parentId !== undefined) updateData.parentId = data.parentId || null;
+        if (data.imageUrl !== undefined) updateData.imageUrl = data.imageUrl || null;
+        if (data.isActive !== undefined) updateData.isActive = data.isActive;
+        if (data.displayOrder !== undefined) updateData.displayOrder = data.displayOrder;
+
+        // Handle attributes: delete all existing and recreate
+        if (data.attributes !== undefined) {
+            await this.prisma
+                .getClient()
+                .categoryAttribute.deleteMany({ where: { categoryId: id } });
+
+            let attributesCreateData: any[] = [];
+            if (Array.isArray(data.attributes)) {
+                attributesCreateData = data.attributes.map((attr) => ({
+                    key: attr.key,
+                    label: attr.label || attr.key,
+                    type: attr.type || "text",
+                    options: attr.options || null,
+                    isFilterable: attr.isFilterable || false,
+                    categoryId: id,
+                }));
+            } else {
+                attributesCreateData = Object.entries(data.attributes).map(([key, value]) => ({
+                    key,
+                    label: String(value),
+                    type: "text",
+                    isFilterable: false,
+                    categoryId: id,
+                }));
+            }
+            if (attributesCreateData.length > 0) {
+                await this.prisma
+                    .getClient()
+                    .categoryAttribute.createMany({ data: attributesCreateData });
+            }
+        }
+
+        const updated = await this.prisma.getClient().category.update({
+            where: { id },
+            data: updateData,
+            include: { attributes: true },
+        });
+
+        return { success: true, data: updated, message: "Category updated successfully" };
+    }
+
+    async deleteCategory(id: string) {
+        const existing = await this.prisma.getClient().category.findUnique({ where: { id } });
+        if (!existing) {
+            throw new Error("Category not found");
+        }
+
+        // Soft delete
+        await this.prisma.getClient().category.update({
+            where: { id },
+            data: { deletedAt: new Date(), isActive: false },
+        });
+
+        return { success: true, message: "Category deleted successfully" };
+    }
+
     async getPageTitle(query: {
         collectionId?: string;
         collectionSlug?: string;

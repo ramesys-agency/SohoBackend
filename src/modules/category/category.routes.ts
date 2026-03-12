@@ -9,5 +9,7 @@ categoryRoutes.get("/page-title", categoryController.getPageTitle);
 
 // Admin Routes
 categoryRoutes.post("/", categoryController.createCategory);
+categoryRoutes.put("/:id", categoryController.updateCategory);
+categoryRoutes.delete("/:id", categoryController.deleteCategory);
 categoryRoutes.get("/parents", categoryController.getParentCategories);
 categoryRoutes.get("/hierarchy", categoryController.getCategoryHierarchy);

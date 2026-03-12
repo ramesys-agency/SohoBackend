@@ -41,4 +41,29 @@ export class CollectionController {
             next(error);
         }
     };
+
+    updateCollection = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+        try {
+            const id = req.params["id"] as string;
+            const data = req.body as {
+                name?: string;
+                gender?: GenderType[];
+                isActive?: boolean;
+            };
+            const result = await this.collectionService.updateCollection(id, data);
+            res.status(200).json(result);
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    deleteCollection = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+        try {
+            const id = req.params["id"] as string;
+            const result = await this.collectionService.deleteCollection(id);
+            res.status(200).json(result);
+        } catch (error) {
+            next(error);
+        }
+    };
 }

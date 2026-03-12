@@ -138,4 +138,62 @@ export class CollectionService {
             message: "Products added to collection successfully",
         };
     }
+
+    async updateCollection(
+        id: string,
+        data: {
+            name?: string;
+            gender?: GenderType[];
+            isActive?: boolean;
+        }
+    ) {
+        const existing = await this.prisma.getClient().collection.findUnique({ where: { id } });
+        if (!existing) {
+            throw new Error("Collection not found");
+        }
+
+        const updateData: any = {};
+
+        if (data.name !== undefined) {
+            updateData.name = data.name;
+            // Regenerate slug from new name
+            const slug = data.name
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, "-")
+                .replace(/(^-|-$)+/g, "");
+            let finalSlug = slug;
+            let counter = 1;
+            while (
+                await this.prisma
+                    .getClient()
+                    .collection.findFirst({ where: { slug: finalSlug, id: { not: id } } })
+            ) {
+                finalSlug = `${slug}-${counter++}`;
+            }
+            updateData.slug = finalSlug;
+        }
+
+        if (data.gender !== undefined) updateData.gender = data.gender;
+        if (data.isActive !== undefined) updateData.isActive = data.isActive;
+
+        const updated = await this.prisma.getClient().collection.update({
+            where: { id },
+            data: updateData,
+        });
+
+        return { success: true, data: updated, message: "Collection updated successfully" };
+    }
+
+    async deleteCollection(id: string) {
+        const existing = await this.prisma.getClient().collection.findUnique({ where: { id } });
+        if (!existing) {
+            throw new Error("Collection not found");
+        }
+
+        // Remove all product associations first, then delete the collection
+        await this.prisma.getClient().productCollection.deleteMany({ where: { collectionId: id } });
+        await this.prisma.getClient().collection.delete({ where: { id } });
+
+        return { success: true, message: "Collection deleted successfully" };
+    }
 }

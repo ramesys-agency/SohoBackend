@@ -53,6 +53,35 @@ export class CategoryController {
         }
     };
 
+    updateCategory = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+        try {
+            const id = req.params["id"] as string;
+            const data = req.body as {
+                name?: string;
+                gender?: GenderType[];
+                parentId?: string;
+                imageUrl?: string;
+                isActive?: boolean;
+                displayOrder?: number;
+                attributes?: Record<string, string> | any[];
+            };
+            const result = await this.categoryService.updateCategory(id, data);
+            res.status(200).json(result);
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    deleteCategory = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+        try {
+            const id = req.params["id"] as string;
+            const result = await this.categoryService.deleteCategory(id);
+            res.status(200).json(result);
+        } catch (error) {
+            next(error);
+        }
+    };
+
     getPageTitle = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
         try {
             const query = req.query as {
