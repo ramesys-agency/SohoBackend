@@ -5,6 +5,7 @@ import type {
     SearchProductsResponseDto,
     SearchProductResultDto,
     CreateProductDto,
+    UpdateProductDto,
 } from "./product.types.js";
 import type { IProductService } from "./product.interface.js";
 import { PrismaService } from "../../core/services/index.js";
@@ -205,6 +206,13 @@ export class ProductService implements IProductService {
                 skip,
                 take,
                 include: {
+                    category: {
+                        select: {
+                            id: true,
+                            name: true,
+                            slug: true,
+                        },
+                    },
                     variants: {
                         select: {
                             id: true,
@@ -288,6 +296,9 @@ export class ProductService implements IProductService {
                 isWishlisted: defaultVariant ? wishlistedVariantIds.has(defaultVariant.id) : false,
                 isAddedToCart: defaultVariant ? cartVariantIds.has(defaultVariant.id) : false,
                 inStock: p.variants.some((v) => v.stockQty > 0),
+                category: p.category,
+                gender: Array.isArray((p.attributes as any)?.gender) ? (p.attributes as any).gender : ((p.attributes as any)?.gender ? [(p.attributes as any).gender] : []),
+                createdAt: p.createdAt,
             };
 
             if (p.variants[0]?.originalPrice) {
@@ -390,5 +401,160 @@ export class ProductService implements IProductService {
             count: mappedProducts.length,
             products: mappedProducts,
         };
+    }
+
+    async updateProduct(productId: string, data: UpdateProductDto): Promise<any> {
+        return await this.prisma.getClient().$transaction(async (tx) => {
+            // 1. Check product exists
+            const existing = await tx.product.findUnique({
+                where: { id: productId },
+            });
+            if (!existing) {
+                throw new NotFoundError("Product not found");
+            }
+
+            // 2. Validate Category if provided
+            if (data.categoryId) {
+                const category = await tx.category.findUnique({
+                    where: { id: data.categoryId },
+                });
+                if (!category) {
+                    throw new NotFoundError("Category not found");
+                }
+            }
+
+            // 3. Update Base Product fields
+            const updatedProduct = await tx.product.update({
+                where: { id: productId },
+                data: {
+                    ...(data.name !== undefined && { name: data.name }),
+                    ...(data.description !== undefined && { description: data.description }),
+                    ...(data.categoryId !== undefined && { categoryId: data.categoryId }),
+                    ...(data.attributes !== undefined && { attributes: data.attributes }),
+                    ...(data.gender !== undefined && { gender: data.gender }),
+                    ...(data.isPublished !== undefined && { isPublished: data.isPublished }),
+                },
+            });
+
+            // 4. Update Collections (replace strategy)
+            if (data.collectionIds !== undefined) {
+                await tx.productCollection.deleteMany({ where: { productId } });
+                if (data.collectionIds.length > 0) {
+                    await tx.productCollection.createMany({
+                        data: data.collectionIds.map((collectionId) => ({
+                            productId,
+                            collectionId,
+                        })),
+                        skipDuplicates: true,
+                    });
+                }
+            }
+
+            // 5. Upsert Variants (by SKU)
+            if (data.variants && data.variants.length > 0) {
+                for (const variant of data.variants) {
+                    const existingVariant = await tx.productVariant.findUnique({
+                        where: { sku: variant.sku },
+                    });
+
+                    if (existingVariant) {
+                        // Update existing variant
+                        await tx.productVariant.update({
+                            where: { sku: variant.sku },
+                            data: {
+                                ...(variant.size !== undefined && { size: variant.size }),
+                                ...(variant.colorName !== undefined && {
+                                    colorName: variant.colorName,
+                                }),
+                                ...(variant.colorValue !== undefined && {
+                                    colorValue: variant.colorValue,
+                                }),
+                                ...(variant.stockQty !== undefined && {
+                                    stockQty: variant.stockQty,
+                                }),
+                                ...(variant.basePrice !== undefined && {
+                                    basePrice: variant.basePrice,
+                                }),
+                                ...(variant.originalPrice !== undefined && {
+                                    originalPrice: variant.originalPrice,
+                                }),
+                                ...(variant.isDefault !== undefined && {
+                                    isDefault: variant.isDefault,
+                                }),
+                            },
+                        });
+
+                        // Replace images if provided
+                        if (variant.images && variant.images.length > 0) {
+                            await tx.productVariantImage.deleteMany({
+                                where: { variantId: existingVariant.id },
+                            });
+                            await tx.productVariantImage.createMany({
+                                data: variant.images.map((image) => ({
+                                    variantId: existingVariant.id,
+                                    imageUrl: image.imageUrl,
+                                    isPrimary: image.isPrimary ?? false,
+                                    displayOrder: image.displayOrder ?? 0,
+                                    colorRef: image.colorRef ?? null,
+                                })),
+                            });
+                        }
+                    } else {
+                        // Create new variant
+                        await tx.productVariant.create({
+                            data: {
+                                productId,
+                                sku: variant.sku,
+                                size: variant.size ?? null,
+                                colorName: variant.colorName ?? null,
+                                colorValue: variant.colorValue ?? null,
+                                stockQty: variant.stockQty ?? 0,
+                                basePrice: variant.basePrice!,
+                                originalPrice: variant.originalPrice ?? null,
+                                isDefault: variant.isDefault ?? false,
+                                images: {
+                                    create: variant.images.map((image) => ({
+                                        imageUrl: image.imageUrl,
+                                        isPrimary: image.isPrimary ?? false,
+                                        displayOrder: image.displayOrder ?? 0,
+                                        colorRef: image.colorRef ?? null,
+                                    })),
+                                },
+                            },
+                        });
+                    }
+                }
+
+                // 6. Record Price History if default variant base price changed
+                const defaultVariant = data.variants.find((v) => v.isDefault) ?? data.variants[0];
+                if (defaultVariant?.basePrice !== undefined) {
+                    await tx.productPriceHistory.create({
+                        data: {
+                            productId,
+                            price: defaultVariant.basePrice,
+                            effectiveFrom: new Date(),
+                        },
+                    });
+                }
+            }
+
+            return updatedProduct;
+        });
+    }
+
+    async deleteProduct(productId: string): Promise<void> {
+        const existing = await this.prisma.getClient().product.findUnique({
+            where: { id: productId },
+        });
+
+        if (!existing) {
+            throw new NotFoundError("Product not found");
+        }
+
+        // Soft delete: set deletedAt timestamp
+        await this.prisma.getClient().product.update({
+            where: { id: productId },
+            data: { deletedAt: new Date() },
+        });
     }
 }

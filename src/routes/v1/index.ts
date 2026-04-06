@@ -11,6 +11,7 @@ import { registerAddressModule } from "../../modules/address/index.js";
 import { registerOrdersModule } from "../../modules/orders/orders.routes.js";
 import { registerCategoryModule } from "../../modules/category/index.js";
 import { registerCollectionModule } from "../../modules/collection/index.js";
+import { registerAppPlacementModule } from "../../modules/app-placement/index.js";
 // import { authMiddleware } from "../../core/middleware/auth.middleware.js";
 
 export function createV1Router(): Router {
@@ -29,6 +30,7 @@ export function createV1Router(): Router {
     router.use("/addresses", registerAddressModule());
     router.use("/categories", registerCategoryModule());
     router.use("/collections", registerCollectionModule());
+    router.use("/app-placement", registerAppPlacementModule());
 
     return router;
 }

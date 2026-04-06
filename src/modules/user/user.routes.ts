@@ -13,6 +13,8 @@ export class UserRoutes {
         router.patch("/avatar", authMiddleware, upload.single("avatar"), controller.updateAvatar);
         router.get("/profile", authMiddleware, controller.getProfile);
         router.delete("/account", authMiddleware, controller.deleteAccount);
+        router.get("/admin/all", authMiddleware, controller.getAllUsers);
+        router.get("/:id", authMiddleware, controller.getUserById);
 
         return router;
     }

@@ -63,6 +63,57 @@ export class UserService {
         });
     }
 
+    async getAllUsers(params: { page?: number; limit?: number; search?: string } = {}) {
+        const page = params.page ?? 1;
+        const limit = params.limit ?? 20;
+        const skip = (page - 1) * limit;
+
+        const where = {
+            isDeleted: false,
+            ...(params.search
+                ? {
+                      OR: [
+                          { fullName: { contains: params.search, mode: "insensitive" as const } },
+                          { email: { contains: params.search, mode: "insensitive" as const } },
+                      ],
+                  }
+                : {}),
+        };
+
+        const [users, total] = await Promise.all([
+            this.prisma.getClient().user.findMany({
+                where,
+                skip,
+                take: limit,
+                orderBy: { createdAt: "desc" },
+                select: {
+                    id: true,
+                    email: true,
+                    fullName: true,
+                    phone: true,
+                    gender: true,
+                    age: true,
+                    region: true,
+                    role: true,
+                    avatar: true,
+                    isVerified: true,
+                    createdAt: true,
+                },
+            }),
+            this.prisma.getClient().user.count({ where }),
+        ]);
+
+        return {
+            data: users,
+            meta: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit),
+            },
+        };
+    }
+
     async deleteAccount(userId: string) {
         return await this.prisma.getClient().user.update({
             where: { id: userId },

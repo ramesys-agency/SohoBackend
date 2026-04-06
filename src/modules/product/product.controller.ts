@@ -3,7 +3,7 @@ import { logger } from "../../config/logger.js";
 import { ProductService } from "./product.service.js";
 import type { IProductService } from "./product.interface.js";
 import type { SearchProductsQueryDto } from "./product.types.js";
-import { createProductSchema } from "./product.schema.js";
+import { createProductSchema, updateProductSchema } from "./product.schema.js";
 
 export class ProductController {
     private productService: IProductService = new ProductService();
@@ -81,6 +81,52 @@ export class ProductController {
 
             logger.info("Product search completed", { q, count: result.count });
             res.status(200).json(result);
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    updateProduct = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+        try {
+            const { productId } = req.params;
+
+            if (!productId) {
+                res.status(400).json({ success: false, message: "Product ID is required" });
+                return;
+            }
+
+            const validatedData = updateProductSchema.parse(req.body);
+            const updatedProduct = await this.productService.updateProduct(productId as string, validatedData as any);
+
+            logger.info("Product updated successfully", { productId });
+
+            res.status(200).json({
+                success: true,
+                message: "Product updated successfully",
+                data: updatedProduct,
+            });
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    deleteProduct = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+        try {
+            const { productId } = req.params;
+
+            if (!productId) {
+                res.status(400).json({ success: false, message: "Product ID is required" });
+                return;
+            }
+
+            await this.productService.deleteProduct(productId as string);
+
+            logger.info("Product deleted successfully", { productId });
+
+            res.status(200).json({
+                success: true,
+                message: "Product deleted successfully",
+            });
         } catch (error) {
             next(error);
         }

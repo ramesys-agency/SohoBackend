@@ -3,6 +3,7 @@ import type {
     GetProductsResponseDto,
     SearchProductsQueryDto,
     SearchProductsResponseDto,
+    UpdateProductDto,
 } from "./product.types.js";
 
 export interface IProductService {
@@ -13,4 +14,6 @@ export interface IProductService {
         userId?: string
     ): Promise<SearchProductsResponseDto>;
     createProduct(data: any): Promise<any>;
+    updateProduct(productId: string, data: UpdateProductDto): Promise<any>;
+    deleteProduct(productId: string): Promise<void>;
 }

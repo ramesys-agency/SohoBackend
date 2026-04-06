@@ -16,6 +16,8 @@ export function registerProductModule(): Router {
     router.get("/", optionalAuthMiddleware, controller.getAllProducts);
     router.get("/search", optionalAuthMiddleware, controller.searchProducts);
     router.get("/:productId", optionalAuthMiddleware, controller.getProductById);
+    router.put("/:productId", authMiddleware, controller.updateProduct);
+    router.delete("/:productId", authMiddleware, controller.deleteProduct);
 
     return router;
 }

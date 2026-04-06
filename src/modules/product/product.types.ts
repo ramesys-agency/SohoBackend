@@ -63,6 +63,13 @@ export interface ProductResponseDto {
     variantId?: string;
     isWishlisted?: boolean;
     inStock: boolean;
+    category: {
+        id: string;
+        name: string;
+        slug: string;
+    };
+    gender: string[];
+    createdAt: Date;
 }
 
 export interface FilterOption {

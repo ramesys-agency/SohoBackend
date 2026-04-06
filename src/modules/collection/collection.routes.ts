@@ -6,5 +6,6 @@ const collectionController = new CollectionController();
 
 collectionRoutes.get("/", collectionController.getAllCollections);
 collectionRoutes.post("/:id/products", collectionController.addProductsToCollection);
+collectionRoutes.delete("/:id/products", collectionController.removeProductsFromCollection);
 collectionRoutes.put("/:id", collectionController.updateCollection);
 collectionRoutes.delete("/:id", collectionController.deleteCollection);

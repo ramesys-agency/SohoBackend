@@ -139,6 +139,32 @@ export class CollectionService {
         };
     }
 
+    async removeProductsFromCollection(collectionId: string, productIds: string[]) {
+        if (!productIds || !Array.isArray(productIds) || productIds.length === 0) {
+            throw new Error("Product IDs are required and must be an array");
+        }
+
+        const collection = await this.prisma.getClient().collection.findUnique({
+            where: { id: collectionId },
+        });
+
+        if (!collection) {
+            throw new Error("Collection not found");
+        }
+
+        await this.prisma.getClient().productCollection.deleteMany({
+            where: {
+                collectionId,
+                productId: { in: productIds },
+            },
+        });
+
+        return {
+            success: true,
+            message: "Products removed from collection successfully",
+        };
+    }
+
     async updateCollection(
         id: string,
         data: {
