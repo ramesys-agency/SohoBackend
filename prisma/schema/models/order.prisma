@@ -16,6 +16,19 @@ model Order {
     payments   Payment[]
     statusLogs OrderStatusLog[]
 
+    // Logistics specific fields
+    aggregator               String?
+    merchantPickupAddressId  String?
+    receiverDivision         String?
+    receiverDistrict         String?
+    receiverThana            String?
+    dropAddress              String?
+    customerMobileNumber     String?
+    itemValue                Decimal?
+    cod                      Boolean          @default(false)
+    itemDetails              String?
+    orderCode                String?
+
     createdAt DateTime @default(now())
 }
 

@@ -55,4 +55,13 @@ export const config = {
         tls: env.REDIS_TLS,
         keyPrefix: env.REDIS_KEY_PREFIX,
     },
+
+    storage: {
+        type: env.STORAGE,
+        bucket: env.BUCKET_NAME,
+        accessKey: env.ACCESS_KEY,
+        secretKey: env.SECRET_KEY,
+        region: env.AWS_REGION,
+        endpoint: env.ENDPOINT,
+    },
 } as const;

@@ -60,6 +60,14 @@ const envSchema = z.object({
         .default("false")
         .transform((v) => v === "true"),
     REDIS_KEY_PREFIX: z.string().default("ugp-bos"),
+
+    // Storage
+    STORAGE: z.enum(["minio", "s3"]).default("minio"),
+    BUCKET_NAME: z.string(),
+    ACCESS_KEY: z.string(),
+    SECRET_KEY: z.string(),
+    AWS_REGION: z.string().default("us-east-1"),
+    ENDPOINT: z.string().url().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

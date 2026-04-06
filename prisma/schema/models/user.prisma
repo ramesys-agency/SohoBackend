@@ -29,12 +29,16 @@ model Address {
     userId String
     user   User   @relation(fields: [userId], references: [id])
 
-    type       String
-    street     String
-    city       String
-    state      String
-    postalCode String
-    country    String?
+    type        String
+    dropAddress String?
+    street      String
+    city        String
+    state       String
+    division    String?
+    district    String?
+    thana       String?
+    postalCode  String
+    country     String?
 
     latitude  Float?
     longitude Float?

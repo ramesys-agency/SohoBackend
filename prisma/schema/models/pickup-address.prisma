@@ -1,0 +1,14 @@
+model PickupAddress {
+    id        String   @id @default(uuid())
+    name      String
+    address   String
+    division  String
+    district  String
+    thana     String
+    phone     String
+    latitude  Float?
+    longitude Float?
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+}
