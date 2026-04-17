@@ -3,11 +3,31 @@ model Coupon {
     code           String     @unique
     type           CouponType
     value          Decimal
-    minOrderAmount Decimal?
+    minOrderAmount Decimal?   @default(0)
     maxDiscount    Decimal?
     validFrom      DateTime
-    validTo        DateTime
+    validTo        DateTime?
     isActive       Boolean    @default(true)
+    isDeleted      Boolean    @default(false)
 
-    orders Order[]
+    usageLimit     Int? // Total uses allowed
+    usageCount     Int  @default(0)
+    userUsageLimit Int? @default(1) // Uses per user
+
+    collections CouponCollection[]
+    orders      Order[]
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
 }
+
+model CouponCollection {
+    couponId     String
+    collectionId String
+
+    coupon     Coupon     @relation(fields: [couponId], references: [id], onDelete: Cascade)
+    collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+    @@id([couponId, collectionId])
+}
+

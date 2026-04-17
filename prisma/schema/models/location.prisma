@@ -1,0 +1,55 @@
+model Division {
+    id         String @id @default(uuid())
+    name       String
+    externalId String @unique // RoadRush ID
+
+    districts District[]
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+}
+
+model District {
+    id         String @id @default(uuid())
+    name       String
+    divisionId String
+    division   Division @relation(fields: [divisionId], references: [id])
+
+    pathaoId   String?
+    externalId String @unique // RoadRush ID
+
+    thanas Thana[]
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+}
+
+model Thana {
+    id         String @id @default(uuid())
+    name       String
+    districtId String
+    district   District @relation(fields: [districtId], references: [id])
+
+    pathaoId   String?
+    rdxId      String?
+    zipCode    String?
+    externalId String @unique // RoadRush ID
+
+    areas Area[]
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+}
+
+model Area {
+    id         String @id @default(uuid())
+    name       String
+    thanaId    String
+    thana      Thana @relation(fields: [thanaId], references: [id])
+
+    rdxId      String?
+    externalId String @unique // RoadRush ID
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+}

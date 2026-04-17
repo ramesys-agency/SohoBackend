@@ -9,7 +9,9 @@ model Collection {
 
     createdAt            DateTime              @default(now())
     collectionPlacements CollectionPlacement[]
+    coupons              CouponCollection[]
 }
+
 
 model ProductCollection {
     productId    String

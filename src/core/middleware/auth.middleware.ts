@@ -1,7 +1,7 @@
 import type { RequestHandler } from "express";
 import jwt from "jsonwebtoken";
 import type { JwtPayload } from "../interfaces/index.js";
-import { UnauthorizedError } from "../errors/index.js";
+import { ForbiddenError, UnauthorizedError } from "../errors/index.js";
 import { config } from "../../config/index.js";
 import { authService } from "../../config/auth.js";
 
@@ -75,5 +75,16 @@ export const optionalAuthMiddleware: RequestHandler = async (req, res, next) => 
         next();
     } catch {
         next();
+    }
+};
+
+export const adminMiddleware: RequestHandler = async (req, res, next) => {
+    try {
+        if (!req.user || req.user.role !== "admin") {
+            throw new ForbiddenError("Admin access required");
+        }
+        next();
+    } catch (error) {
+        next(error);
     }
 };

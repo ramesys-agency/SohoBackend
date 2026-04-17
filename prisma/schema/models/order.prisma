@@ -17,17 +17,29 @@ model Order {
     statusLogs OrderStatusLog[]
 
     // Logistics specific fields
-    aggregator               String?
-    merchantPickupAddressId  String?
-    receiverDivision         String?
-    receiverDistrict         String?
-    receiverThana            String?
-    dropAddress              String?
-    customerMobileNumber     String?
-    itemValue                Decimal?
-    cod                      Boolean          @default(false)
-    itemDetails              String?
-    orderCode                String?
+    aggregator              String?
+    merchantPickupAddressId String?
+    receiverDivision        String?
+    receiverDistrict        String?
+    receiverThana           String?
+    dropAddress             String?
+    customerMobileNumber    String?
+    itemValue               Decimal?
+    cod                     Boolean  @default(false)
+    itemDetails             String?
+    orderCode               String?
+
+    // Detailed Logistics & COD Fields
+    cashCollectAmount   Decimal? @default(0)
+    deliveryFee         Decimal? @default(0)
+    codCharge           Decimal? @default(0)
+    vat                 Decimal? @default(0)
+    tax                 Decimal? @default(0)
+    deliveryPriority    String?  @default("now")
+    otp                 String?
+    rcvPay              Boolean? @default(true)
+    requestDeliveryDate String?
+
 
     createdAt DateTime @default(now())
 }

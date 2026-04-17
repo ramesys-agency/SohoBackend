@@ -64,4 +64,11 @@ export const config = {
         region: env.AWS_REGION,
         endpoint: env.ENDPOINT,
     },
+    
+    logistics: {
+        baseUrl: env.ROADRUSH_BASE_URL,
+        username: env.ROADRUSH_USERNAME,
+        password: env.ROADRUSH_PASSWORD,
+    },
 } as const;
+

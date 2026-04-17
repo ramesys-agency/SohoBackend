@@ -68,7 +68,13 @@ const envSchema = z.object({
     SECRET_KEY: z.string(),
     AWS_REGION: z.string().default("us-east-1"),
     ENDPOINT: z.string().url().optional(),
+    
+    // Logistics
+    ROADRUSH_BASE_URL: z.string().url().default("https://www.roadrush.xyz/api/customer"),
+    ROADRUSH_USERNAME: z.string().optional(),
+    ROADRUSH_PASSWORD: z.string().optional(),
 });
+
 
 export type Env = z.infer<typeof envSchema>;
 

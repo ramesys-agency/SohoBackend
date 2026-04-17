@@ -14,8 +14,17 @@ export class LoggerService implements ILoggerService {
                     winston.format.timestamp(),
                     winston.format.printf(({ level, message, timestamp, ...meta }) => {
                         const metaStr = Object.keys(meta).length ? ` ${JSON.stringify(meta)}` : "";
+                        
+                        // Special formatting for HTTP logs
+                        if (level.includes("http")) {
+                            const { statusCode, duration, method, path } = meta;
+                            return `${timestamp} [${level}]: ${method} ${path} ${statusCode} - ${duration}`;
+                        }
+
+
                         return `${timestamp} [${level}]: ${message}${metaStr}`;
                     })
+
                 ),
             }),
         ];
