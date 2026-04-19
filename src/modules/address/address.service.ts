@@ -6,14 +6,14 @@ export class AddressService {
 
     async getAddresses(userId: string) {
         return await this.prisma.getClient().address.findMany({
-            where: { userId },
+            where: { userId, isDeleted: false },
             orderBy: [{ isDefault: "desc" }, { id: "asc" }],
         });
     }
 
     async getAddressById(addressId: string, userId: string) {
         return await this.prisma.getClient().address.findFirst({
-            where: { id: addressId, userId },
+            where: { id: addressId, userId, isDeleted: false },
         });
     }
 
@@ -28,11 +28,15 @@ export class AddressService {
 
         return await this.prisma.getClient().address.create({
             data: {
-                userId,
+                user: { connect: { id: userId } },
                 type: data.type,
                 street: data.street,
-                city: data.city,
-                state: data.state,
+                city: data.city ?? null,
+                state: data.state ?? null,
+                division: (data as any).division ?? null,
+                district: (data as any).district ?? null,
+                thana: (data as any).thana ?? null,
+                area: (data as any).area ?? null,
                 postalCode: data.postalCode,
                 country: data.country ?? null,
                 latitude: data.latitude ?? null,
@@ -98,15 +102,19 @@ export class AddressService {
     async deleteAddress(addressId: string, userId: string) {
         // Verify ownership
         const existing = await this.prisma.getClient().address.findFirst({
-            where: { id: addressId, userId },
+            where: { id: addressId, userId, isDeleted: false },
         });
 
         if (!existing) {
             return null;
         }
 
-        return await this.prisma.getClient().address.delete({
+        return await this.prisma.getClient().address.update({
             where: { id: addressId },
+            data: { 
+                isDeleted: true,
+                deletedAt: new Date()
+            },
         });
     }
 }

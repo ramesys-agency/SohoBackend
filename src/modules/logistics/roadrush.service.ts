@@ -8,8 +8,8 @@ import { redis } from "../../config/redis.js";
  */
 export class RoadRushService {
     private readonly baseUrl: string;
-    private readonly username?: string;
-    private readonly password?: string;
+    private readonly username?: string | undefined;
+    private readonly password?: string | undefined;
 
     constructor() {
         this.baseUrl = config.logistics.baseUrl;
@@ -61,7 +61,7 @@ export class RoadRushService {
 
         // Cache token for 1 hour
         try {
-            await redis.set(cacheKey, token, 3600);
+            await redis.set(cacheKey, token, { ttl: 3600 });
         } catch (error) {
             logger.warn("Failed to cache RoadRush token", { error });
         }
@@ -102,7 +102,9 @@ export class RoadRushService {
     }
 
     async getDistricts(divisionId: string) {
-        return this.request<{ status: string; data: any[] }>(`/districts/?division_id=${divisionId}`);
+        return this.request<{ status: string; data: any[] }>(
+            `/districts/?division_id=${divisionId}`
+        );
     }
 
     async getThanas(districtId: string) {

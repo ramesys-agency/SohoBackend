@@ -32,11 +32,12 @@ model Address {
     type        String
     dropAddress String?
     street      String
-    city        String
-    state       String
+    city        String?
+    state       String?
     division    String?
     district    String?
     thana       String?
+    area        String?
     postalCode  String
     country     String?
 

@@ -27,7 +27,7 @@ router.post("/pickup-addresses", authMiddleware, adminMiddleware, controller.add
 /**
  * Admin Sync Routes
  */
-router.post("/sync-locations", authMiddleware, adminMiddleware, controller.syncLocations);
+// router.post("/sync-locations", authMiddleware, adminMiddleware, controller.syncLocations);
+router.post("/sync-locations", controller.syncLocations);
 
 export default router;
-

@@ -64,13 +64,10 @@ export class LogisticsController {
 
     async syncLocations(req: Request, res: Response, next: NextFunction) {
         try {
-            // This is a heavy operation, so we move it to background or just return success
-            locationService.syncAllLocations().catch((err) => {
-                console.error("Delayed sync failed", err);
-            });
+            await locationService.syncAllLocations();
             res.json({
                 status: "success",
-                message: "Location synchronization started in background",
+                message: "Location synchronization completed successfully",
             });
         } catch (error) {
             next(error);
@@ -92,8 +89,9 @@ export class LogisticsController {
 
     async getPickupAddresses(req: Request, res: Response, next: NextFunction) {
         try {
-            const addresses = await prisma.pickupAddress.findMany();
-            res.json({ status: "success", data: addresses });
+            // Fetch live data from RoadRush
+            const result = await roadRushService.getSenderAddresses();
+            res.json(result);
         } catch (error) {
             next(error);
         }

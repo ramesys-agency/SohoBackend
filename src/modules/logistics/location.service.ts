@@ -50,14 +50,18 @@ export class LocationService {
         try {
             const divisionsResponse = await this.roadRush.getDivisions();
 
-            for (const div of divisionsResponse.data) {
+            const totalDivisions = divisionsResponse.data.length;
+            logger.info(`Found ${totalDivisions} divisions to sync`);
+
+            for (let i = 0; i < totalDivisions; i++) {
+                const div = divisionsResponse.data[i];
+                logger.info(`[${i + 1}/${totalDivisions}] Syncing Division: ${div.name}...`);
+
                 const dbDiv = await this.prisma.getClient().division.upsert({
                     where: { externalId: div.id },
                     update: { name: div.name },
                     create: { name: div.name, externalId: div.id },
                 });
-
-                logger.debug(`Synced Division: ${div.name}`);
 
                 // Fetch and Sync Districts
                 const districtsResponse = await this.roadRush.getDistricts(div.id);
@@ -116,6 +120,7 @@ export class LocationService {
                         }
                     }
                 }
+                logger.info(`Successfully completed syncing Division: ${div.name}`);
             }
             logger.info("Logistics location synchronization completed successfully");
         } catch (error) {
