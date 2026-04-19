@@ -10,7 +10,58 @@ export class OrderService {
     private roadRush: RoadRushService = new RoadRushService();
     private couponService: CouponService = new CouponService();
 
-    // ... (getAllOrders and getOrderById omitted for brevity, keeping them original) ...
+    async getAllOrders(userId: string) {
+        return await this.prisma.getClient().order.findMany({
+            where: { userId },
+            include: {
+                items: {
+                    include: {
+                        product: true,
+                        variant: {
+                            include: {
+                                images: true,
+                            },
+                        },
+                    },
+                },
+                address: true,
+            },
+            orderBy: { createdAt: "desc" },
+        });
+    }
+
+    async getOrderById(userId: string, orderId: string) {
+        const order = await this.prisma.getClient().order.findUnique({
+            where: { id: orderId },
+            include: {
+                items: {
+                    include: {
+                        product: true,
+                        variant: {
+                            include: {
+                                images: true,
+                            },
+                        },
+                    },
+                },
+                address: true,
+                payments: true,
+                statusLogs: {
+                    orderBy: { createdAt: "desc" },
+                },
+            },
+        });
+
+        if (!order) {
+            throw new NotFoundError("Order not found");
+        }
+
+        if (order.userId !== userId) {
+            throw new ForbiddenError("You are not authorized to view this order");
+        }
+
+        return order;
+    }
 
     async createOrder(userId: string, data: any) {
         // 1. Get Cart Items to compute total and details
@@ -54,18 +105,25 @@ export class OrderService {
         let couponId = null;
         if (data.couponCode) {
             try {
-                const couponResult = await this.couponService.validateCoupon(data.couponCode, userId, cartItems);
+                const couponResult = await this.couponService.validateCoupon(
+                    data.couponCode,
+                    userId,
+                    cartItems
+                );
                 discountAmount = couponResult.discountAmount;
                 couponId = couponResult.couponId;
             } catch (error) {
-                logger.warn("Invalid coupon provided during order creation", { code: data.couponCode, userId });
-                // We can choose to throw or just ignore the coupon. 
-                // Usually, throwing is safer to avoid price discrepancies.
+                logger.warn("Invalid coupon provided during order creation", {
+                    code: data.couponCode,
+                    userId,
+                });
                 throw error;
             }
         }
 
         const totalAmount = subtotal - discountAmount;
+        const customerFullName = address.user.fullName || data.customerFullName || "Not Provided";
+        const customerPhone = address.user.phone || data.customerPhone || "Not Provided";
 
         // 4. Create Order & Payment in a transaction
         const order = await this.prisma.getClient().$transaction(async (tx) => {
@@ -85,7 +143,9 @@ export class OrderService {
                     receiverDistrict: address.district,
                     receiverThana: address.thana,
                     dropAddress: address.dropAddress || address.street,
-                    customerMobileNumber: address.user.phone || data.customerPhone || "",
+                    customerMobileNumber: customerPhone,
+                    customerFullName: customerFullName,
+                    customerEmail: address.user.email || data.customerEmail || "Not Provided",
 
                     items: {
                         create: cartItems.map((item) => ({
@@ -121,28 +181,31 @@ export class OrderService {
             return newOrder;
         });
 
-        // 5. External RoadRush Order Placement (Fire and forget or async)
-        // This is done outside the transaction to avoid blocking DB if RoadRush API is slow.
+        // 5. External RoadRush Order Placement
         try {
             const rrResponse = await this.roadRush.placeOrder({
-                marcent_pickup_address_id: data.pickupAddressId, // Provided by frontend from list of pickup addresses
-                aggregator: data.aggregator,
+                marcent_pickup_address_id: 17, // Hardcoded per user request
+                aggregator: data.aggregator || "pathao", // Default to pathao per user request
                 receiver_division: address.division,
                 receiver_district: address.district,
                 receiver_thana: address.thana,
                 drop_address: address.dropAddress || address.street,
-                customer_full_name: data.customerFullName || "Customer",
-                customer_mobile_number: address.user.phone || data.customerPhone || "",
+                customer_full_name: customerFullName,
+                customer_mobile_number: customerPhone,
                 item_value: totalAmount,
                 cod: data.paymentMethod === "COD",
                 item_details: itemDetails,
             });
 
-            if (rrResponse.status === "success") {
-                // Attach the RoadRush Order Code (rd#...) for tracking
+            if (rrResponse.status === "success" && rrResponse.order_code) {
                 await this.prisma.getClient().order.update({
                     where: { id: order.id },
-                    data: { orderCode: rrResponse.order.order_code },
+                    data: { orderCode: rrResponse.order_code },
+                });
+            } else if (rrResponse.status === "success") {
+                logger.warn("RoadRush order placed but order_code was missing in response", {
+                    orderId: order.id,
+                    response: rrResponse,
                 });
             }
         } catch (error) {
@@ -206,11 +269,124 @@ export class OrderService {
             throw new NotFoundError("Payment record not found for this order");
         }
 
+        const finalStatus = status === "completed" ? "success" : status;
+
         return await this.prisma.getClient().payment.update({
             where: { id: payment.id },
             data: {
-                status: status as any,
+                status: finalStatus as any,
             },
         });
+    }
+
+    async syncOrderWithRoadRush(orderId: string) {
+        const order = await this.prisma.getClient().order.findUnique({
+            where: { id: orderId },
+            include: {
+                address: { include: { user: true } },
+                items: { include: { product: true, variant: true } },
+            },
+        });
+
+        if (!order) throw new NotFoundError("Order not found");
+        if (order.orderCode) throw new BadRequestError("Order is already synced with RoadRush");
+
+        const customerFullName = order.address.user.fullName || "Not Provided";
+        const customerPhone =
+            order.address.user.phone || order.customerMobileNumber || "Not Provided";
+
+        const rrResponse = await this.roadRush.placeOrder({
+            marcent_pickup_address_id: 17,
+            aggregator: order.aggregator || "pathao",
+            receiver_division: order.receiverDivision,
+            receiver_district: order.receiverDistrict,
+            receiver_thana: order.receiverThana,
+            drop_address: order.dropAddress,
+            customer_full_name: customerFullName,
+            customer_mobile_number: customerPhone,
+            item_value: order.totalAmount,
+            cod: order.cod,
+            item_details: order.itemDetails,
+        });
+
+        if (rrResponse.status === "success" && rrResponse.order_code) {
+            // Also update the saved customer details from what was sent
+            return await this.prisma.getClient().order.update({
+                where: { id: order.id },
+                data: {
+                    orderCode: rrResponse.order_code,
+                    customerFullName: customerFullName,
+                    customerMobileNumber: customerPhone,
+                    customerEmail:
+                        order.address.user.email || order.customerEmail || "Not Provided",
+                },
+            });
+        }
+
+        throw new Error("Failed to sync with RoadRush: " + JSON.stringify(rrResponse));
+    }
+
+    async refreshOrderStatus(orderId: string) {
+        const order = await this.prisma.getClient().order.findUnique({
+            where: { id: orderId },
+        });
+
+        if (!order) throw new NotFoundError("Order not found");
+        if (!order.orderCode)
+            throw new BadRequestError("Order has not been synced with RoadRush yet");
+
+        const rrResponse = await this.roadRush.getOrderDetails(order.orderCode);
+        console.log(
+            "REFRESH_ORDER_STATUS: Raw RoadRush response:",
+            JSON.stringify(rrResponse, null, 2)
+        );
+        logger.info("RoadRush order_details response", { orderId, response: rrResponse });
+
+        if (rrResponse.status === "success") {
+            // RoadRush might return it as .order or .order_details depending on version
+            const rrOrder = (rrResponse as any).order || (rrResponse as any).order_details;
+
+            // The field name is actually 'status' in the response log, not 'order_status'
+            const newStatus = rrOrder?.status || rrOrder?.order_status;
+
+            if (newStatus) {
+                // Map RoadRush status to our OrderStatus enum
+                // RoadRush: Order Place, Processing, Shipped, Delivered, Cancelled
+                let ourStatus: any = order.status;
+                const normalizedStatus = newStatus.toLowerCase();
+
+                if (normalizedStatus.includes("place")) ourStatus = "pending";
+                else if (normalizedStatus.includes("processing")) ourStatus = "processing";
+                else if (normalizedStatus.includes("shipped")) ourStatus = "shipped";
+                else if (normalizedStatus.includes("picked")) ourStatus = "shipped";
+                else if (normalizedStatus.includes("delivered")) ourStatus = "delivered";
+                else if (normalizedStatus.includes("cancelled")) ourStatus = "cancelled";
+                else if (normalizedStatus.includes("failed")) ourStatus = "cancelled";
+
+                // Update order and set sync time
+                return await this.prisma.getClient().order.update({
+                    where: { id: orderId },
+                    data: {
+                        status: ourStatus,
+                        lastLogisticsSync: new Date(),
+                        // Backfill missing details from RoadRush if available
+                        customerFullName: order.customerFullName || rrOrder?.customer_full_name,
+                        customerMobileNumber:
+                            order.customerMobileNumber || rrOrder?.customer_mobile_number,
+                        customerEmail:
+                            order.customerEmail ||
+                            rrOrder?.customer_email ||
+                            (order as any).user?.email,
+                    },
+                });
+            } else {
+                logger.warn("RoadRush refresh returned success but no order_status was found", {
+                    orderId,
+                    response: rrResponse,
+                });
+            }
+        }
+
+        throw new Error("Failed to refresh status from RoadRush: " + JSON.stringify(rrResponse));
     }
 }

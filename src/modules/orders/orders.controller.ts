@@ -103,4 +103,34 @@ export class OrderController {
             next(error);
         }
     };
+
+    syncOrderWithRoadRush = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { orderId } = req.params;
+            if (!orderId) throw new BadRequestError("Order ID is required");
+
+            const order = await this.orderService.syncOrderWithRoadRush(orderId);
+            res.status(200).json({
+                message: "Order synced with RoadRush successfully",
+                data: order,
+            });
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    refreshOrderStatus = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { orderId } = req.params;
+            if (!orderId) throw new BadRequestError("Order ID is required");
+
+            const order = await this.orderService.refreshOrderStatus(orderId);
+            res.status(200).json({
+                message: "Order status refreshed successfully",
+                data: order,
+            });
+        } catch (error) {
+            next(error);
+        }
+    };
 }

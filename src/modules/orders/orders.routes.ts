@@ -15,6 +15,8 @@ export function registerOrdersModule(): Router {
     router.get("/admin/all", authMiddleware, adminMiddleware, controller.adminGetAllOrders);
     router.patch("/admin/:orderId/status", authMiddleware, adminMiddleware, controller.updateOrderStatus);
     router.patch("/admin/:orderId/payment", authMiddleware, adminMiddleware, controller.adminUpdatePaymentStatus);
+    router.post("/admin/:orderId/sync-roadrush", authMiddleware, adminMiddleware, controller.syncOrderWithRoadRush);
+    router.post("/admin/:orderId/refresh-status", authMiddleware, adminMiddleware, controller.refreshOrderStatus);
 
 
     return router;

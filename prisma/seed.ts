@@ -2,6 +2,16 @@ import { PrismaClient } from "../src/generated/prisma";
 import { Pool } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
 import "dotenv/config";
+import { scrypt, randomBytes } from "crypto";
+import { promisify } from "util";
+
+const scryptAsync = promisify(scrypt);
+
+async function hashPassword(password: string): Promise<string> {
+    const salt = randomBytes(16).toString("hex");
+    const derivedKey = (await scryptAsync(password, salt, 64)) as Buffer;
+    return `${salt}:${derivedKey.toString("hex")}`;
+}
 
 const connectionString = process.env.DATABASE_URL;
 const pool = new Pool({ connectionString });
@@ -13,6 +23,13 @@ const PRODUCT_COUNT = 120;
 const genders = ["Men", "Women", "Kids", "Unisex"];
 const fabrics = ["Cotton", "Poly Cotton", "Denim", "Linen"];
 const occasions = ["Casual", "Formal", "Festive"];
+
+const genderMap: Record<string, string[]> = {
+    "Men": ["MEN"],
+    "Women": ["WOMEN"],
+    "Kids": ["KIDS"],
+    "Unisex": ["MEN", "WOMEN"]
+};
 
 const colors = [
     { name: "Black", hex: "000000" },
@@ -31,6 +48,63 @@ function randomPrice(base = 799) {
 }
 
 async function main() {
+    console.log("🧹 Cleaning database...");
+    
+    // Ordered deletion to handle foreign keys
+    await prisma.productVariantImage.deleteMany().catch(() => {});
+    await prisma.inventoryLog.deleteMany().catch(() => {});
+    await prisma.cartItem.deleteMany().catch(() => {});
+    await prisma.orderItem.deleteMany().catch(() => {});
+    await prisma.productVariant.deleteMany().catch(() => {});
+    await prisma.productCollection.deleteMany().catch(() => {});
+    await prisma.wishlist.deleteMany().catch(() => {});
+    await prisma.review.deleteMany().catch(() => {});
+    await prisma.orderStatusLog.deleteMany().catch(() => {});
+    await prisma.payment.deleteMany().catch(() => {});
+    await prisma.order.deleteMany().catch(() => {});
+    await prisma.productPriceHistory.deleteMany().catch(() => {});
+    await prisma.productSEO.deleteMany().catch(() => {});
+    await prisma.product.deleteMany().catch(() => {});
+    await prisma.collectionPlacement.deleteMany().catch(() => {});
+    await prisma.collection.deleteMany().catch(() => {});
+    await prisma.categoryAttribute.deleteMany().catch(() => {});
+    await prisma.category.deleteMany().catch(() => {});
+    await prisma.address.deleteMany().catch(() => {});
+    await prisma.savedPaymentMethod.deleteMany().catch(() => {});
+    await prisma.user.deleteMany().catch(() => {});
+
+    // Clean up new tables too
+    await (prisma as any).couponCollection?.deleteMany().catch(() => {});
+    await (prisma as any).coupon?.deleteMany().catch(() => {});
+    await (prisma as any).pickupAddress?.deleteMany().catch(() => {});
+    await (prisma as any).area?.deleteMany().catch(() => {});
+    await (prisma as any).thana?.deleteMany().catch(() => {});
+    await (prisma as any).district?.deleteMany().catch(() => {});
+    await (prisma as any).division?.deleteMany().catch(() => {});
+
+    console.log("👤 Creating User & Admin...");
+    const passwordHash = await hashPassword("Password@123");
+    
+    await prisma.user.create({
+        data: {
+            email: "admin@soho.com",
+            fullName: "Admin Soho",
+            passwordHash,
+            role: "admin",
+            isVerified: true
+        }
+    });
+
+    await prisma.user.create({
+        data: {
+            email: "user@soho.com",
+            fullName: "User Soho",
+            passwordHash,
+            role: "customer",
+            isVerified: true
+        }
+    });
+
     console.log("🌱 Generating 100+ mock products...");
 
     // ------------------------
@@ -320,8 +394,6 @@ async function main() {
         },
     ];
 
-    await prisma.collectionPlacement.deleteMany({});
-
     for (const [index, p] of placements.entries()) {
         const collection = collections.find((c) => c.slug === p.slug);
         if (collection) {
@@ -374,7 +446,7 @@ async function main() {
     // ------------------------
     for (let i = 1; i <= PRODUCT_COUNT; i++) {
         const category = randomFrom(categories);
-        const gender = randomFrom(genders);
+        const genderLabel = randomFrom(genders);
         const basePrice = randomPrice();
 
         const product = await prisma.product.create({
@@ -383,8 +455,9 @@ async function main() {
                 description: `High quality ${category.name.toLowerCase()} designed for modern lifestyle.`,
                 categoryId: category.id,
                 isPublished: true,
+                gender: { set: genderMap[genderLabel] as any },
                 attributes: {
-                    gender,
+                    gender: genderLabel,
                     fabric: randomFrom(fabrics),
                     occasion: randomFrom(occasions),
                 },
@@ -411,7 +484,7 @@ async function main() {
             const variant = await prisma.productVariant.create({
                 data: {
                     productId: product.id,
-                    sku: `${category.slug}-${color.name}-${i}`,
+                    sku: `${category.slug}-${color.name.toLowerCase().replace(/\s+/g, '-')}-${i}`,
                     size: "M",
                     colorName: color.name,
                     colorValue: `#${color.hex}`,

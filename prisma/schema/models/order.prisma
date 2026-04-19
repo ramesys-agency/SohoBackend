@@ -24,10 +24,13 @@ model Order {
     receiverThana           String?
     dropAddress             String?
     customerMobileNumber    String?
+    customerFullName        String?
+    customerEmail           String?
     itemValue               Decimal?
     cod                     Boolean  @default(false)
     itemDetails             String?
     orderCode               String?
+    lastLogisticsSync       DateTime?
 
     // Detailed Logistics & COD Fields
     cashCollectAmount   Decimal? @default(0)
