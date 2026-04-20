@@ -27,7 +27,7 @@ WORKDIR /app
 
 # 2. Copy dependencies and build artifacts
 COPY package*.json ./
-RUN npm install --only=production
+RUN npm install --only=production --ignore-scripts
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
