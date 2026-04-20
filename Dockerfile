@@ -28,8 +28,9 @@ RUN echo '#!/bin/sh\n\
     tailscaled --tun=userspace-networking --socks5-server=localhost:1055 & \n\
     sleep 2 \n\
     tailscale up --authkey=${TAILSCALE_AUTH_KEY} --hostname=soho-backend \n\
-    # We run generate again at runtime to ensure the client is synced with the REAL DB\n\
+    # Generate prisma client and seed the DB at runtime\n\
     npx prisma generate --config prisma/prisma.config.ts \n\
+    npm run db:seed \n\
     node dist/server.js' > /app/start.sh && chmod +x /app/start.sh
 
 # 8. Execute
