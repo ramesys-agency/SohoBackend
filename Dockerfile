@@ -14,7 +14,7 @@ RUN npm install
 
 # 4. Copy Code & Build
 COPY . .
-RUN npx prisma generate
+RUN npx prisma generate --config prisma/prisma.config.ts
 RUN npm run build
 
 # 5. Create Startup Script
