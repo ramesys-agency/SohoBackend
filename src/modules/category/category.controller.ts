@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { CategoryService } from "./category.service.js";
-import { GenderType } from "../../generated/prisma/index.js";
+import { GenderType } from "@prisma/client";
 
 export class CategoryController {
     private categoryService = new CategoryService();

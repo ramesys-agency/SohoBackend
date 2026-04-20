@@ -1,5 +1,5 @@
 import { PrismaService } from "../../core/services/index.js";
-import { PageType, SectionType } from "../../generated/prisma/index.js";
+import { PageType, SectionType } from "@prisma/client";
 
 export class AppPlacementService {
     private prisma = new PrismaService();

@@ -1,5 +1,5 @@
 import { PrismaService } from "../../core/services/index.js";
-import { GenderType, Prisma, PageType, SectionType } from "../../generated/prisma/index.js";
+import { GenderType, Prisma, PageType, SectionType } from "@prisma/client";
 
 export class CollectionService {
     private prisma = new PrismaService();

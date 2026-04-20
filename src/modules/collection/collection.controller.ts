@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { CollectionService } from "./collection.service.js";
-import type { GenderType } from "../../generated/prisma/index.js";
+import type { GenderType } from "@prisma/client";
 
 export class CollectionController {
     private collectionService = new CollectionService();
