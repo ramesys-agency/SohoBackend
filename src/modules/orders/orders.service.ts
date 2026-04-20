@@ -89,14 +89,14 @@ export class OrderService {
         let subtotal = 0;
         const itemDetails = cartItems
             .map(
-                (i) =>
+                (i: any) =>
                     `${i.variant.product.name} (${i.variant.size || ""} ${i.variant.colorName || ""}) x${
                         i.quantity
                     }`
             )
             .join(", ");
 
-        cartItems.forEach((item) => {
+        cartItems.forEach((item: any) => {
             subtotal += Number(item.variant.basePrice) * item.quantity;
         });
 
@@ -126,7 +126,7 @@ export class OrderService {
         const customerPhone = address.user.phone || data.customerPhone || "Not Provided";
 
         // 4. Create Order & Payment in a transaction
-        const order = await this.prisma.getClient().$transaction(async (tx) => {
+        const order = await this.prisma.getClient().$transaction(async (tx: any) => {
             // Create Order record
             const newOrder = await tx.order.create({
                 data: {
@@ -148,7 +148,7 @@ export class OrderService {
                     customerEmail: address.user.email || data.customerEmail || "Not Provided",
 
                     items: {
-                        create: cartItems.map((item) => ({
+                        create: cartItems.map((item: any) => ({
                             productId: item.variant.productId,
                             variantId: item.variantId,
                             quantity: item.quantity,
@@ -197,10 +197,10 @@ export class OrderService {
                 item_details: itemDetails,
             });
 
-            if (rrResponse.status === "success" && rrResponse.order_code) {
+            if (rrResponse.status === "success" && (rrResponse as any).order_code) {
                 await this.prisma.getClient().order.update({
                     where: { id: order.id },
-                    data: { orderCode: rrResponse.order_code },
+                    data: { orderCode: (rrResponse as any).order_code },
                 });
             } else if (rrResponse.status === "success") {
                 logger.warn("RoadRush order placed but order_code was missing in response", {
@@ -309,12 +309,12 @@ export class OrderService {
             item_details: order.itemDetails,
         });
 
-        if (rrResponse.status === "success" && rrResponse.order_code) {
+        if (rrResponse.status === "success" && (rrResponse as any).order_code) {
             // Also update the saved customer details from what was sent
             return await this.prisma.getClient().order.update({
                 where: { id: order.id },
                 data: {
-                    orderCode: rrResponse.order_code,
+                    orderCode: (rrResponse as any).order_code,
                     customerFullName: customerFullName,
                     customerMobileNumber: customerPhone,
                     customerEmail:

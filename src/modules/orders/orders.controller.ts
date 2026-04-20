@@ -106,7 +106,7 @@ export class OrderController {
 
     syncOrderWithRoadRush = async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const { orderId } = req.params;
+            const { orderId } = req.params as { orderId: string };
             if (!orderId) throw new BadRequestError("Order ID is required");
 
             const order = await this.orderService.syncOrderWithRoadRush(orderId);
@@ -121,7 +121,7 @@ export class OrderController {
 
     refreshOrderStatus = async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const { orderId } = req.params;
+            const { orderId } = req.params as { orderId: string };
             if (!orderId) throw new BadRequestError("Order ID is required");
 
             const order = await this.orderService.refreshOrderStatus(orderId);
