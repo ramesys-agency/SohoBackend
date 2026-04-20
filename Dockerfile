@@ -18,12 +18,11 @@ RUN npx prisma generate
 RUN npm run build
 
 # 5. Create Startup Script
+# 5. Create Startup Script
 RUN echo '#!/bin/sh\n\
     tailscaled --tun=userspace-networking --socks5-server=localhost:1055 & \n\
-    # Wait a second for tailscaled to start\n\
     sleep 2 \n\
     tailscale up --authkey=${TAILSCALE_AUTH_KEY} --hostname=soho-backend \n\
-    # Start your actual app (verify if it is server.js or main.js)\n\
     node dist/server.js' > /app/start.sh && chmod +x /app/start.sh
 
 # 6. Execute
