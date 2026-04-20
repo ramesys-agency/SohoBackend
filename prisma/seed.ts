@@ -1,4 +1,6 @@
 import { PrismaClient } from "@prisma/client";
+import { Pool } from "pg";
+import { PrismaPg } from "@prisma/adapter-pg";
 import "dotenv/config";
 import { scrypt, randomBytes } from "node:crypto";
 import { promisify } from "node:util";
@@ -11,7 +13,10 @@ async function hashPassword(password: string): Promise<string> {
     return `${salt}:${derivedKey.toString("hex")}`;
 }
 
-const prisma = new PrismaClient();
+const connectionString = process.env.DATABASE_URL;
+const pool = new Pool({ connectionString });
+const adapter = new PrismaPg(pool);
+const prisma = new PrismaClient({ adapter });
 
 const PRODUCT_COUNT = 120;
 
