@@ -18,6 +18,11 @@ COPY . .
 # 5. Generate Prisma Client (Using a DUMMY DATABASE_URL for build time)
 # This allows TypeScript to find the types and compile successfully
 ENV DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder"
+ENV JWT_SECRET="placeholder_secret_for_seed"
+ENV BUCKET_NAME="placeholder_bucket"
+ENV ACCESS_KEY="placeholder_key"
+ENV SECRET_KEY="placeholder_secret"
+ENV REGION="us-east-1"
 RUN npx prisma generate --config prisma/prisma.config.ts
 
 # 6. Build the project
