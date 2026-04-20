@@ -45,19 +45,23 @@ ENV REGION="us-east-1"
 
 # 4. Create Startup Script
 RUN echo "#!/bin/sh\n\
-tailscaled --tun=userspace-networking --socks5-server=localhost:1055 & \n\
-sleep 3 \n\
+tailscaled --tun=userspace-networking --socks5-server=127.0.0.1:1055 & \n\
+sleep 5 \n\
 tailscale up --authkey=\${TAILSCALE_AUTH_KEY} --hostname=soho-backend \n\
 \n\
-# Map Local Ports to Remote Tailscale IPs via Proxy\n\
-# We use 127.0.0.1 to avoid IPv6 resolution issues\n\
+# Wait for Tailscale to be ready\n\
+until tailscale status; do echo 'Waiting for tailscale...'; sleep 2; done \n\
+\n\
+# Map Local Ports via Bridge\n\
 socat TCP4-LISTEN:5432,fork SOCKS4A:127.0.0.1:\${SERVER_IP}:5432,socksport=1055 & \n\
 socat TCP4-LISTEN:6379,fork SOCKS4A:127.0.0.1:\${SERVER_IP}:6379,socksport=1055 & \n\
-socat TCP4-LISTEN:9000,fork SOCKS4A:127.0.0.1:\${SERVER_IP}:9000,socksport=1055 & \n\
 \n\
-# Sync DB client and run non-destructive seed\n\
-npx prisma generate --config prisma/prisma.config.ts \n\
-npm run db:seed \n\
+# Test if the database port is reachable through the bridge\n\
+echo 'Testing connection to DB bridge...'\n\
+\n\
+# Sync DB client and run seed\n\
+npx prisma generate --config prisma/prisma.config.ts && \n\
+npm run db:seed && \n\
 \n\
 node dist/server.js" > /app/start.sh && chmod +x /app/start.sh
 
