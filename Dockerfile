@@ -1,4 +1,4 @@
-# --- Build Stage ---
+# --- Builder Stage ---
 FROM node:20-slim AS builder
 
 WORKDIR /app
@@ -7,62 +7,44 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 
-# Copy source and generate prisma client
+# Copy source and prisma
 COPY . .
-ENV DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder"
+
+# Generate Prisma Client
 RUN npx prisma generate --config prisma/prisma.config.ts
 
-# Build the project
-RUN npx tsc -p tsconfig.build.json
+# Build TypeScript
+RUN npm run build:prod
 
 # --- Production Stage ---
 FROM node:20-slim AS production
 
-# 1. Install Tailscale, socat & runtime dependencies
-RUN apt-get update && apt-get install -y curl ca-certificates iptables socat && \
-    curl -fsSL https://tailscale.com/install.sh | sh && \
-    rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
 
-# 2. Copy dependencies and build artifacts
+# 1. Install runtime dependencies only
+RUN apt-get update && apt-get install -y curl ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+# 2. Copy production dependencies
 COPY package*.json ./
 RUN npm install --only=production --ignore-scripts
-# Install tsx globally or locally in prod to handle the seed
-RUN npm install tsx
 
+# 3. Copy build artifacts and prisma
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/tsconfig.build.json ./
+COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
 
-# 3. Dummy env vars for runtime generation/seeding
-ENV DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder"
-ENV JWT_SECRET="placeholder_secret_for_seed_that_is_at_least_32_characters"
-ENV BUCKET_NAME="placeholder_bucket"
-ENV ACCESS_KEY="placeholder_key"
-ENV SECRET_KEY="placeholder_secret"
-ENV REGION="us-east-1"
+# 4. Standard Environment Variables
+ENV NODE_ENV="production"
+ENV PORT=3000
 
-# 4. Create Startup Script
+# 5. Startup behavior
+# We keep a simple script to trigger the seed on startup if you still want it 
+# Otherwise, you can change this to simply: CMD ["node", "dist/server.js"]
 RUN echo "#!/bin/sh\n\
-tailscaled --tun=userspace-networking --socks5-server=127.0.0.1:1055 & \n\
-sleep 5 \n\
-tailscale up --authkey=\${TAILSCALE_AUTH_KEY} --hostname=soho-backend \n\
-\n\
-# Wait for Tailscale to be ready\n\
-until tailscale status; do echo 'Waiting for tailscale...'; sleep 2; done \n\
-\n\
-# Map Local Ports via Bridge\n\
-socat TCP4-LISTEN:5432,fork SOCKS4A:127.0.0.1:\${SERVER_IP}:5432,socksport=1055 & \n\
-socat TCP4-LISTEN:6379,fork SOCKS4A:127.0.0.1:\${SERVER_IP}:6379,socksport=1055 & \n\
-\n\
-# Test if the database port is reachable through the bridge\n\
-echo 'Testing connection to DB bridge...'\n\
-\n\
-# Sync DB client and run seed\n\
-npx prisma generate --config prisma/prisma.config.ts && \n\
-npm run db:seed && \n\
-\n\
-node dist/server.js" > /app/start.sh && chmod +x /app/start.sh
+    npm run db:seed\n\
+    node dist/server.js" > /app/start.sh && chmod +x /app/start.sh
+
+EXPOSE 3000
 
 CMD ["/app/start.sh"]
