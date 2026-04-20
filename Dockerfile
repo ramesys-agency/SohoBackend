@@ -18,8 +18,8 @@ RUN npx tsc -p tsconfig.build.json
 # --- Production Stage ---
 FROM node:20-slim AS production
 
-# 1. Install Tailscale & runtime dependencies
-RUN apt-get update && apt-get install -y curl ca-certificates iptables && \
+# 1. Install Tailscale, socat & runtime dependencies
+RUN apt-get update && apt-get install -y curl ca-certificates iptables socat && \
     curl -fsSL https://tailscale.com/install.sh | sh && \
     rm -rf /var/lib/apt/lists/*
 
@@ -28,6 +28,8 @@ WORKDIR /app
 # 2. Copy dependencies and build artifacts
 COPY package*.json ./
 RUN npm install --only=production --ignore-scripts
+# Install tsx globally or locally in prod to handle the seed
+RUN npm install tsx
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
@@ -42,16 +44,21 @@ ENV SECRET_KEY="placeholder_secret"
 ENV REGION="us-east-1"
 
 # 4. Create Startup Script
-RUN echo '#!/bin/sh\n\
+RUN echo "#!/bin/sh\n\
 tailscaled --tun=userspace-networking --socks5-server=localhost:1055 & \n\
 sleep 3 \n\
-tailscale up --authkey=${TAILSCALE_AUTH_KEY} --hostname=soho-backend \n\
-export ALL_PROXY=socks5://localhost:1055/ \n\
+tailscale up --authkey=\${TAILSCALE_AUTH_KEY} --hostname=soho-backend \n\
+\n\
+# Map Local Ports to Remote Tailscale IPs via Proxy\n\
+# We use 127.0.0.1 to avoid IPv6 resolution issues\n\
+socat TCP4-LISTEN:5432,fork SOCKS4A:127.0.0.1:\${SERVER_IP}:5432,socksport=1055 & \n\
+socat TCP4-LISTEN:6379,fork SOCKS4A:127.0.0.1:\${SERVER_IP}:6379,socksport=1055 & \n\
+socat TCP4-LISTEN:9000,fork SOCKS4A:127.0.0.1:\${SERVER_IP}:9000,socksport=1055 & \n\
 \n\
 # Sync DB client and run non-destructive seed\n\
 npx prisma generate --config prisma/prisma.config.ts \n\
 npm run db:seed \n\
 \n\
-node dist/server.js' > /app/start.sh && chmod +x /app/start.sh
+node dist/server.js" > /app/start.sh && chmod +x /app/start.sh
 
 CMD ["/app/start.sh"]
