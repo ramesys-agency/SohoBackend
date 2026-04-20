@@ -21,7 +21,9 @@ ENV DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholde
 RUN npx prisma generate --config prisma/prisma.config.ts
 
 # 6. Build the project
-RUN npm run build
+# 6. Build the project (Forces rootDir to src to keep dist flat)
+RUN npx tsc --rootDir src --outDir dist && \
+    if [ -d "dist/src" ]; then cp -r dist/src/* dist/ && rm -rf dist/src; fi
 
 # 7. Create Startup Script
 RUN echo '#!/bin/sh\n\
