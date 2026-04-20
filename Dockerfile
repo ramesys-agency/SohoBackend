@@ -1,36 +1,28 @@
-# Build stage
-FROM node:22.12.0-alpine AS builder
+# 1. Use Node base image
+FROM node:20-slim
+
+# 2. Install Tailscale & Dependencies
+RUN apt-get update && apt-get install -y curl ca-certificates iptables && \
+    curl -fsSL https://tailscale.com/install.sh | sh && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
+# 3. Install App Dependencies
 COPY package*.json ./
-RUN npm ci
+RUN npm install
 
-COPY prisma ./prisma/
+# 4. Copy Code & Build
+COPY . .
 RUN npx prisma generate
-
-COPY tsconfig.json ./
-COPY src ./src/
 RUN npm run build
 
-# Production stage
-FROM node:22.12.0-alpine AS production
+# 5. Create Startup Script
+# This script starts Tailscale first, then your app
+RUN echo '#!/bin/sh\n\
+    tailscaled --tun=userspace-networking --socks5-server=localhost:1055 & \n\
+    tailscale up --authkey=${TAILSCALE_AUTH_KEY} --hostname=soho-backend \n\
+    npm run start' > /app/start.sh && chmod +x /app/start.sh
 
-WORKDIR /app
-
-RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
-
-COPY package*.json ./
-RUN npm ci --only=production
-
-COPY --from=builder /app/src/generated ./src/generated/
-COPY --from=builder /app/dist ./dist/
-COPY --from=builder /app/prisma ./prisma/
-
-RUN chown -R nodejs:nodejs /app
-
-USER nodejs
-
-EXPOSE 3000
-
-CMD ["node", "dist/server.js"]
+# 6. Execute
+CMD ["/app/start.sh"]
