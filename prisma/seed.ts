@@ -171,14 +171,20 @@ async function main() {
         // VARIANTS (Multiple variants for most products)
         // ------------------------
         const numVariants = Math.random() > 0.3 ? Math.floor(Math.random() * 4) + 2 : 1;
-        
+        const usedSkus = new Set<string>();
+
         for (let j = 0; j < numVariants; j++) {
             const color = randomFrom(colors);
             const size = randomFrom(SIZES);
             const sku = `${category.slug}-${color.name.toLowerCase().replace(/\s+/g, "-")}-${size.toLowerCase()}-${i}`;
-            
-            await prisma.productVariant.create({
-                data: {
+
+            if (usedSkus.has(sku)) continue;
+            usedSkus.add(sku);
+
+            await prisma.productVariant.upsert({
+                where: { sku },
+                update: {},
+                create: {
                     productId: product.id,
                     sku,
                     size,
@@ -187,7 +193,7 @@ async function main() {
                     stockQty: Math.floor(Math.random() * 100),
                     basePrice,
                     originalPrice: basePrice + 400,
-                    isDefault: j === 0,
+                    isDefault: usedSkus.size === 1,
                 },
             });
         }
