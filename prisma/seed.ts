@@ -53,7 +53,13 @@ function randomPrice(base = 799) {
     return base + Math.floor(Math.random() * 1500);
 }
 
-function getPlaceholderUrl(width: number, height: number, bgColor: string, textColor: string, text: string) {
+function getPlaceholderUrl(
+    width: number,
+    height: number,
+    bgColor: string,
+    textColor: string,
+    text: string
+) {
     const cleanText = encodeURIComponent(text);
     return `https://placehold.co/${width}x${height}/${bgColor}/${textColor}.png?text=${cleanText}`;
 }
@@ -106,11 +112,11 @@ async function main() {
         const cat = await prisma.category.upsert({
             where: { slug: def.slug },
             update: { gender: { set: def.gender as any } },
-            create: { 
-                name: def.name, 
-                slug: def.slug, 
+            create: {
+                name: def.name,
+                slug: def.slug,
                 gender: { set: def.gender as any },
-                imageUrl: getPlaceholderUrl(400, 400, "CCCCCC", "333333", def.name)
+                imageUrl: getPlaceholderUrl(400, 400, "CCCCCC", "333333", def.name),
             },
         });
         categories.push(cat);
@@ -149,18 +155,60 @@ async function main() {
     console.log("🖼️ Seeding Placements...");
     const placements = [
         // HOME PAGE
-        { page: "HOME", section: "TOP_BANNER", colSlug: "summer-sale", isBanner: true, order: 1, text: "SUMMER SALE - 50% OFF" },
-        { page: "HOME", section: "MID_BANNER", colSlug: "new-arrivals", isBanner: true, order: 2, text: "CHECK NEW ARRIVALS" },
-        { page: "HOME", section: "FEATURED_ROW", colSlug: "best-sellers", isBanner: false, order: 3, text: "BEST SELLERS" },
-        
+        {
+            page: "HOME",
+            section: "TOP_BANNER",
+            colSlug: "summer-sale",
+            isBanner: true,
+            order: 1,
+            text: "SUMMER SALE - 50% OFF",
+        },
+        {
+            page: "HOME",
+            section: "MID_BANNER",
+            colSlug: "new-arrivals",
+            isBanner: true,
+            order: 2,
+            text: "CHECK NEW ARRIVALS",
+        },
+        {
+            page: "HOME",
+            section: "FEATURED_ROW",
+            colSlug: "best-sellers",
+            isBanner: false,
+            order: 3,
+            text: "BEST SELLERS",
+        },
+
         // MEN PAGE
-        { page: "MEN", section: "TOP_BANNER", colSlug: "men-premium", isBanner: true, order: 1, text: "MEN'S PREMIUM COLLECTION" },
-        
+        {
+            page: "MEN",
+            section: "TOP_BANNER",
+            colSlug: "men-premium",
+            isBanner: true,
+            order: 1,
+            text: "MEN'S PREMIUM COLLECTION",
+        },
+
         // WOMEN PAGE
-        { page: "WOMEN", section: "TOP_BANNER", colSlug: "women-trends", isBanner: true, order: 1, text: "WOMEN'S LATEST TRENDS" },
-        
+        {
+            page: "WOMEN",
+            section: "TOP_BANNER",
+            colSlug: "women-trends",
+            isBanner: true,
+            order: 1,
+            text: "WOMEN'S LATEST TRENDS",
+        },
+
         // KIDS PAGE
-        { page: "KIDS", section: "TOP_BANNER", colSlug: "kids-playroom", isBanner: true, order: 1, text: "KIDS PLAYROOM FAVORITES" },
+        {
+            page: "KIDS",
+            section: "TOP_BANNER",
+            colSlug: "kids-playroom",
+            isBanner: true,
+            order: 1,
+            text: "KIDS PLAYROOM FAVORITES",
+        },
     ];
 
     for (const p of placements) {
@@ -173,7 +221,7 @@ async function main() {
                 page: p.page as any,
                 section: p.section as any,
                 collectionId: col.id,
-            }
+            },
         });
 
         if (!existingPlacement) {
@@ -194,7 +242,7 @@ async function main() {
     // PRODUCT GENERATION
     // ------------------------
     console.log("👕 Seeding Products & Variants...");
-    
+
     for (let i = 1; i <= PRODUCT_COUNT; i++) {
         const category = randomFrom(categories);
         const genderLabel = randomFrom(genders);
@@ -205,7 +253,7 @@ async function main() {
 
         // Find or create product
         let product = await prisma.product.findFirst({
-            where: { name: productName }
+            where: { name: productName },
         });
 
         if (!product) {
@@ -226,25 +274,35 @@ async function main() {
 
             // Link to "New Arrivals"
             await prisma.productCollection.upsert({
-                where: { productId_collectionId: { productId: product.id, collectionId: collectionMap["new-arrivals"].id } },
+                where: {
+                    productId_collectionId: {
+                        productId: product.id,
+                        collectionId: collectionMap["new-arrivals"].id,
+                    },
+                },
                 update: {},
                 create: {
                     productId: product.id,
                     collectionId: collectionMap["new-arrivals"].id,
                     displayOrder: i,
-                }
+                },
             });
 
             // 30% chance to be a Best Seller
             if (Math.random() < 0.3) {
                 await prisma.productCollection.upsert({
-                    where: { productId_collectionId: { productId: product.id, collectionId: collectionMap["best-sellers"].id } },
+                    where: {
+                        productId_collectionId: {
+                            productId: product.id,
+                            collectionId: collectionMap["best-sellers"].id,
+                        },
+                    },
                     update: {},
                     create: {
                         productId: product.id,
                         collectionId: collectionMap["best-sellers"].id,
                         displayOrder: i,
-                    }
+                    },
                 });
             }
         }
@@ -287,18 +345,24 @@ async function main() {
             // IMAGES for Variant (Clear and re-create to ensure extensions are updated)
             // ------------------------
             await prisma.productVariantImage.deleteMany({
-                where: { variantId: variant.id }
+                where: { variantId: variant.id },
             });
 
             const views = ["Front View", "Back View", "Side View", "Detail"];
             for (let vIdx = 0; vIdx < views.length; vIdx++) {
                 const view = views[vIdx];
                 const textColor = color.name === "White" ? "000000" : "FFFFFF";
-                
+
                 await prisma.productVariantImage.create({
                     data: {
                         variantId: variant.id,
-                        imageUrl: getPlaceholderUrl(600, 800, color.hex, textColor, `${color.name} ${category.name} - ${view}`),
+                        imageUrl: getPlaceholderUrl(
+                            600,
+                            800,
+                            color.hex,
+                            textColor,
+                            `${color.name} ${category.name} - ${view}`
+                        ),
                         isPrimary: vIdx === 0,
                         displayOrder: vIdx,
                     },
