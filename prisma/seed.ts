@@ -31,6 +31,8 @@ const genderMap: Record<string, string[]> = {
     Unisex: ["MEN", "WOMEN"],
 };
 
+const SIZES = ["S", "M", "L", "XL", "XXL"];
+
 const colors = [
     { name: "Black", hex: "000000" },
     { name: "White", hex: "FFFFFF" },
@@ -166,21 +168,29 @@ async function main() {
         });
 
         // ------------------------
-        // VARIANTS
+        // VARIANTS (Multiple variants for most products)
         // ------------------------
-        const color = randomFrom(colors);
-        await prisma.productVariant.create({
-            data: {
-                productId: product.id,
-                sku: `${category.slug}-${color.name.toLowerCase().replace(/\s+/g, "-")}-${i}`,
-                size: "M",
-                colorName: color.name,
-                colorValue: `#${color.hex}`,
-                stockQty: 50,
-                basePrice,
-                originalPrice: basePrice + 400,
-            },
-        });
+        const numVariants = Math.random() > 0.3 ? Math.floor(Math.random() * 4) + 2 : 1;
+        
+        for (let j = 0; j < numVariants; j++) {
+            const color = randomFrom(colors);
+            const size = randomFrom(SIZES);
+            const sku = `${category.slug}-${color.name.toLowerCase().replace(/\s+/g, "-")}-${size.toLowerCase()}-${i}`;
+            
+            await prisma.productVariant.create({
+                data: {
+                    productId: product.id,
+                    sku,
+                    size,
+                    colorName: color.name,
+                    colorValue: `#${color.hex}`,
+                    stockQty: Math.floor(Math.random() * 100),
+                    basePrice,
+                    originalPrice: basePrice + 400,
+                    isDefault: j === 0,
+                },
+            });
+        }
     }
 
     console.log(`✅ Successfully generated ${PRODUCT_COUNT} products`);
