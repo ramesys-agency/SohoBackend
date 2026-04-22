@@ -7,7 +7,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
 
 COPY prisma ./prisma/
-RUN npx prisma generate
+RUN npx prisma generate --config prisma/prisma.config.ts
 
 COPY tsconfig.json ./
 COPY src ./src/
