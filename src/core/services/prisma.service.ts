@@ -83,12 +83,9 @@ export class PrismaService implements IPrismaService {
     }
 
     async checkConnection(): Promise<boolean> {
-        if (!this.connected) {
-            return false;
-        }
-
         try {
             await this.client.$queryRaw`SELECT 1`;
+            this.connected = true;
             return true;
         } catch {
             this.connected = false;
