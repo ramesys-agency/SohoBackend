@@ -135,7 +135,7 @@ export class RoadRushService {
     }
 
     async placeOrder(orderData: any) {
-        return this.request<{ status: string; order: any }>("/place-order/", {
+        return this.request<{ status: string; order?: any; order_code?: string }>("/place-order/", {
             method: "POST",
             body: JSON.stringify(orderData),
         });
@@ -146,7 +146,7 @@ export class RoadRushService {
     }
 
     async getOrderDetails(orderCode: string) {
-        return this.request<{ status: string; order: any }>("/order_details/", {
+        return this.request<{ status: string; order?: any; order_details?: any }>("/order_details/", {
             method: "POST",
             body: JSON.stringify({ order_code: orderCode }),
         });

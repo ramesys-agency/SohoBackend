@@ -70,5 +70,10 @@ export const config = {
         username: env.ROADRUSH_USERNAME,
         password: env.ROADRUSH_PASSWORD,
     },
+    
+    license: {
+        key: env.LICENSE_KEY,
+        serviceUrl: env.LICENSE_SERVICE_URL,
+    },
 } as const;
 

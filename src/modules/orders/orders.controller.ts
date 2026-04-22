@@ -107,7 +107,9 @@ export class OrderController {
     syncOrderWithRoadRush = async (req: Request, res: Response, next: NextFunction) => {
         try {
             const { orderId } = req.params;
-            if (!orderId) throw new BadRequestError("Order ID is required");
+            if (!orderId || typeof orderId !== "string") {
+                throw new BadRequestError("Valid Order ID is required");
+            }
 
             const order = await this.orderService.syncOrderWithRoadRush(orderId);
             res.status(200).json({
@@ -122,7 +124,9 @@ export class OrderController {
     refreshOrderStatus = async (req: Request, res: Response, next: NextFunction) => {
         try {
             const { orderId } = req.params;
-            if (!orderId) throw new BadRequestError("Order ID is required");
+            if (!orderId || typeof orderId !== "string") {
+                throw new BadRequestError("Valid Order ID is required");
+            }
 
             const order = await this.orderService.refreshOrderStatus(orderId);
             res.status(200).json({

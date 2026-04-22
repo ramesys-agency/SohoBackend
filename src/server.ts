@@ -6,12 +6,18 @@ import { prisma } from "./config/prisma.js";
 import { redis } from "./config/redis.js";
 
 // Core
-import { ShutdownManager } from "./core/utils/index.js";
+import { ShutdownManager, verifyLicense, startLicenseHeartbeat } from "./core/utils/index.js";
 
 // Routes
 
 async function bootstrap(): Promise<void> {
     logger.info("Starting application...");
+
+    // License Check
+    await verifyLicense();
+
+    // Start Heartbeat (Check every 15 minutes)
+    startLicenseHeartbeat();
 
     // Connect to database with retry logic
     const maxRetries = 3;

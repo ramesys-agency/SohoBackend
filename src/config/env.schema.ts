@@ -73,6 +73,10 @@ const envSchema = z.object({
     ROADRUSH_BASE_URL: z.string().url().default("https://www.roadrush.xyz/api/customer"),
     ROADRUSH_USERNAME: z.string().optional(),
     ROADRUSH_PASSWORD: z.string().optional(),
+
+    // License
+    LICENSE_KEY: z.string().optional(),
+    LICENSE_SERVICE_URL: z.string().url().optional(),
 });
 
 
