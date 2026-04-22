@@ -23,9 +23,10 @@ RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts
 
-COPY --from=builder /app/src/generated ./dist/generated/
+COPY prisma ./prisma/
+RUN DATABASE_URL=postgresql://dummy:dummy@localhost:5432/dummy npx prisma generate --config prisma/prisma.config.ts
+
 COPY --from=builder /app/dist ./dist/
-COPY --from=builder /app/prisma ./prisma/
 
 RUN chown -R nodejs:nodejs /app
 

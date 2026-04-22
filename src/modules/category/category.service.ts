@@ -1,6 +1,6 @@
 import { PrismaService } from "../../core/services/index.js";
-import { GenderType } from "../../generated/prisma/index.js";
-import type { Prisma } from "../../generated/prisma/index.js";
+import { GenderType } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 
 export class CategoryService {
     private prisma = new PrismaService();

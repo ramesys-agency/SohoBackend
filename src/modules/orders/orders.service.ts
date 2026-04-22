@@ -3,7 +3,7 @@ import { NotFoundError, ForbiddenError, BadRequestError } from "../../core/error
 import { RoadRushService } from "../logistics/roadrush.service.js";
 import { CouponService } from "../coupon/coupon.service.js";
 import { logger } from "../../config/logger.js";
-import { OrderStatus } from "../../generated/prisma/index.js";
+import { OrderStatus } from "@prisma/client";
 
 export class OrderService {
     private prisma: PrismaService = new PrismaService();

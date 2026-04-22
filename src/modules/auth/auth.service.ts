@@ -1,4 +1,4 @@
-import type { PrismaClient } from "../../generated/prisma/client.js";
+import type { PrismaClient } from "@prisma/client";
 import { PrismaService } from "../../core/services/prisma.service.js";
 import { AuthUtils } from "./auth.utils.js";
 import { config } from "../../config/index.js";

@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { AppPlacementService } from "./app-placement.service.js";
-import { PageType, SectionType } from "../../generated/prisma/index.js";
+import { PageType, SectionType } from "@prisma/client";
 import { getDummyUrl } from "../upload/upload.helper.js";
 
 export class AppPlacementController {
