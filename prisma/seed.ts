@@ -55,7 +55,7 @@ function randomPrice(base = 799) {
 
 function getPlaceholderUrl(width: number, height: number, bgColor: string, textColor: string, text: string) {
     const cleanText = encodeURIComponent(text);
-    return `https://placehold.co/${width}x${height}/${bgColor}/${textColor}?text=${cleanText}`;
+    return `https://placehold.co/${width}x${height}/${bgColor}/${textColor}.png?text=${cleanText}`;
 }
 
 async function main() {
@@ -194,52 +194,59 @@ async function main() {
     // PRODUCT GENERATION
     // ------------------------
     console.log("👕 Seeding Products & Variants...");
-    const existingProductCount = await prisma.product.count();
     
-    // Only generate more if we have fewer than target
-    const productsToGenerate = Math.max(0, PRODUCT_COUNT - existingProductCount);
-    
-    for (let i = 1; i <= productsToGenerate; i++) {
+    for (let i = 1; i <= PRODUCT_COUNT; i++) {
         const category = randomFrom(categories);
         const genderLabel = randomFrom(genders);
         const genEnum = genderEnumMap[genderLabel];
 
         const basePrice = randomPrice();
-        const productName = `${genderLabel}'s ${category.name} ${existingProductCount + i}`;
+        const productName = `${genderLabel}'s ${category.name} ${i}`;
 
-        const product = await prisma.product.create({
-            data: {
-                name: productName,
-                description: `Experience ultimate comfort and style with this ${productName.toLowerCase()}. Made with premium ${randomFrom(fabrics).toLowerCase()} fabric, perfect for any ${randomFrom(occasions).toLowerCase()} occasion.`,
-                categoryId: category.id,
-                isPublished: true,
-                gender: { set: [genEnum] },
-                attributes: {
-                    gender: genderLabel,
-                    fabric: randomFrom(fabrics),
-                    occasion: randomFrom(occasions),
-                },
-            },
+        // Find or create product
+        let product = await prisma.product.findFirst({
+            where: { name: productName }
         });
 
-        // Link to "New Arrivals" always
-        await prisma.productCollection.create({
-            data: {
-                productId: product.id,
-                collectionId: collectionMap["new-arrivals"].id,
-                displayOrder: i,
-            }
-        });
-
-        // 30% chance to be a Best Seller
-        if (Math.random() < 0.3) {
-            await prisma.productCollection.create({
+        if (!product) {
+            product = await prisma.product.create({
                 data: {
+                    name: productName,
+                    description: `Experience ultimate comfort and style with this ${productName.toLowerCase()}. Made with premium ${randomFrom(fabrics).toLowerCase()} fabric, perfect for any ${randomFrom(occasions).toLowerCase()} occasion.`,
+                    categoryId: category.id,
+                    isPublished: true,
+                    gender: { set: [genEnum] },
+                    attributes: {
+                        gender: genderLabel,
+                        fabric: randomFrom(fabrics),
+                        occasion: randomFrom(occasions),
+                    },
+                },
+            });
+
+            // Link to "New Arrivals"
+            await prisma.productCollection.upsert({
+                where: { productId_collectionId: { productId: product.id, collectionId: collectionMap["new-arrivals"].id } },
+                update: {},
+                create: {
                     productId: product.id,
-                    collectionId: collectionMap["best-sellers"].id,
+                    collectionId: collectionMap["new-arrivals"].id,
                     displayOrder: i,
                 }
             });
+
+            // 30% chance to be a Best Seller
+            if (Math.random() < 0.3) {
+                await prisma.productCollection.upsert({
+                    where: { productId_collectionId: { productId: product.id, collectionId: collectionMap["best-sellers"].id } },
+                    update: {},
+                    create: {
+                        productId: product.id,
+                        collectionId: collectionMap["best-sellers"].id,
+                        displayOrder: i,
+                    }
+                });
+            }
         }
 
         // ------------------------
@@ -251,13 +258,19 @@ async function main() {
         for (let j = 0; j < numVariants; j++) {
             const color = randomFrom(colors);
             const size = randomFrom(SIZES);
-            const sku = `${category.slug}-${color.name.toLowerCase().replace(/\s+/g, "-")}-${size.toLowerCase()}-${product.id.slice(0, 4)}`;
+            const sku = `${category.slug}-${color.name.toLowerCase().replace(/\s+/g, "-")}-${size.toLowerCase()}-${i}`;
 
             if (usedSkus.has(sku)) continue;
             usedSkus.add(sku);
 
-            const variant = await prisma.productVariant.create({
-                data: {
+            const variant = await prisma.productVariant.upsert({
+                where: { sku },
+                update: {
+                    basePrice,
+                    originalPrice: basePrice + 500,
+                    stockQty: Math.floor(Math.random() * 100) + 10,
+                },
+                create: {
                     productId: product.id,
                     sku,
                     size,
@@ -271,8 +284,12 @@ async function main() {
             });
 
             // ------------------------
-            // IMAGES for Variant
+            // IMAGES for Variant (Clear and re-create to ensure extensions are updated)
             // ------------------------
+            await prisma.productVariantImage.deleteMany({
+                where: { variantId: variant.id }
+            });
+
             const views = ["Front View", "Back View", "Side View", "Detail"];
             for (let vIdx = 0; vIdx < views.length; vIdx++) {
                 const view = views[vIdx];
@@ -290,7 +307,7 @@ async function main() {
         }
     }
 
-    console.log(`✅ Seed completed! Created ${productsToGenerate} new products.`);
+    console.log(`✅ Seed completed! Processed ${PRODUCT_COUNT} products.`);
 }
 
 main()
