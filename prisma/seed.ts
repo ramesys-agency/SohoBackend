@@ -20,16 +20,15 @@ const prisma = new PrismaClient({ adapter });
 
 const PRODUCT_COUNT = 120;
 
-const genders = ["Men", "Women", "Kids", "Unisex"];
-const fabrics = ["Cotton", "Poly Cotton", "Denim", "Linen"];
-const occasions = ["Casual", "Formal", "Festive"];
-
-const genderMap: Record<string, string[]> = {
-    Men: ["MEN"],
-    Women: ["WOMEN"],
-    Kids: ["KIDS"],
-    Unisex: ["MEN", "WOMEN"],
+const genders = ["Men", "Women", "Kids"];
+const genderEnumMap: Record<string, any> = {
+    Men: "MEN",
+    Women: "WOMEN",
+    Kids: "KIDS",
 };
+
+const fabrics = ["Cotton", "Poly Cotton", "Denim", "Linen", "Silk", "Wool"];
+const occasions = ["Casual", "Formal", "Festive", "Sports", "Party"];
 
 const SIZES = ["S", "M", "L", "XL", "XXL"];
 
@@ -37,8 +36,13 @@ const colors = [
     { name: "Black", hex: "000000" },
     { name: "White", hex: "FFFFFF" },
     { name: "Navy Blue", hex: "000080" },
-    { name: "Red", hex: "FF0000" },
-    { name: "Olive", hex: "556B2F" },
+    { name: "Crimson Red", hex: "DC143C" },
+    { name: "Olive Green", hex: "556B2F" },
+    { name: "Royal Blue", hex: "4169E1" },
+    { name: "Charcoal Gray", hex: "36454F" },
+    { name: "Maroon", hex: "800000" },
+    { name: "Teal", hex: "008080" },
+    { name: "Mustard Yellow", hex: "E1AD01" },
 ];
 
 function randomFrom<T>(arr: T[]) {
@@ -49,8 +53,13 @@ function randomPrice(base = 799) {
     return base + Math.floor(Math.random() * 1500);
 }
 
+function getPlaceholderUrl(width: number, height: number, bgColor: string, textColor: string, text: string) {
+    const cleanText = encodeURIComponent(text);
+    return `https://placehold.co/${width}x${height}/${bgColor}/${textColor}?text=${cleanText}`;
+}
+
 async function main() {
-    console.log("🌱 Starting seed (Non-destructive)...");
+    console.log("🌱 Starting robust seed...");
 
     console.log("👤 Creating User & Admin...");
     const passwordHash = await hashPassword("Password@123");
@@ -79,86 +88,132 @@ async function main() {
         },
     });
 
-    console.log("🌱 Generating mock data (if missing)...");
-
-    // Check if we already have products
-    const existingProducts = await prisma.product.count();
-    if (existingProducts > 0) {
-        console.log("✅ Data already exists. Skipping bulk product generation.");
-        return;
-    }
-
     // ------------------------
-    // COLLECTIONS
+    // CATEGORIES
     // ------------------------
-    const collectionData = [
-        {
-            name: "Men's Grand Summer Sale",
-            slug: "men-top-banner",
-            gender: { set: ["MEN" as const] },
-        },
-        {
-            name: "Women's Trending Collection",
-            slug: "women-top-banner",
-            gender: { set: ["WOMEN" as const] },
-        },
-        { name: "Kids New Arrivals", slug: "kids-top-banner", gender: { set: ["KIDS" as const] } },
-        {
-            name: "Home Top Offer",
-            slug: "home-top-banner",
-            gender: { set: ["MEN" as const, "WOMEN" as const, "KIDS" as const] },
-        },
-        {
-            name: "New Arrivals",
-            slug: "new-arrivals",
-            gender: { set: ["MEN" as const, "WOMEN" as const] },
-        },
-    ];
-
-    for (const data of collectionData) {
-        await prisma.collection.upsert({
-            where: { slug: data.slug },
-            update: data,
-            create: data,
-        });
-    }
-
-    // ------------------------
-    // CATEGORY TREE
-    // ------------------------
+    console.log("📂 Seeding Categories...");
     const categoryDefs = [
-        { name: "T-Shirts", slug: "t-shirts", gender: ["MEN", "WOMEN", "KIDS"] as any },
-        { name: "Shirts", slug: "shirts", gender: ["MEN", "WOMEN", "KIDS"] as any },
-        { name: "Kurtas", slug: "kurtas", gender: ["MEN", "WOMEN", "KIDS"] as any },
+        { name: "T-Shirts", slug: "t-shirts", gender: ["MEN", "WOMEN", "KIDS"] },
+        { name: "Shirts", slug: "shirts", gender: ["MEN", "WOMEN", "KIDS"] },
+        { name: "Jeans", slug: "jeans", gender: ["MEN", "WOMEN", "KIDS"] },
+        { name: "Dresses", slug: "dresses", gender: ["WOMEN", "KIDS"] },
+        { name: "Jackets", slug: "jackets", gender: ["MEN", "WOMEN", "KIDS"] },
+        { name: "Accessories", slug: "accessories", gender: ["MEN", "WOMEN", "KIDS"] },
     ];
 
     const categories = [];
     for (const def of categoryDefs) {
         const cat = await prisma.category.upsert({
             where: { slug: def.slug },
-            update: { gender: def.gender },
-            create: { name: def.name, slug: def.slug, gender: def.gender },
+            update: { gender: { set: def.gender as any } },
+            create: { 
+                name: def.name, 
+                slug: def.slug, 
+                gender: { set: def.gender as any },
+                imageUrl: getPlaceholderUrl(400, 400, "CCCCCC", "333333", def.name)
+            },
         });
         categories.push(cat);
     }
 
     // ------------------------
+    // COLLECTIONS
+    // ------------------------
+    console.log("📦 Seeding Collections...");
+    const collectionData = [
+        { name: "Best Sellers", slug: "best-sellers", gender: ["MEN", "WOMEN", "KIDS"] },
+        { name: "New Arrivals", slug: "new-arrivals", gender: ["MEN", "WOMEN", "KIDS"] },
+        { name: "Summer Sale 2024", slug: "summer-sale", gender: ["MEN", "WOMEN", "KIDS"] },
+        { name: "Men's Premium", slug: "men-premium", gender: ["MEN"] },
+        { name: "Women's Trends", slug: "women-trends", gender: ["WOMEN"] },
+        { name: "Kids Playroom", slug: "kids-playroom", gender: ["KIDS"] },
+    ];
+
+    const collectionMap: Record<string, any> = {};
+    for (const data of collectionData) {
+        const col = await prisma.collection.upsert({
+            where: { slug: data.slug },
+            update: { gender: { set: data.gender as any } },
+            create: {
+                name: data.name,
+                slug: data.slug,
+                gender: { set: data.gender as any },
+            },
+        });
+        collectionMap[data.slug] = col;
+    }
+
+    // ------------------------
+    // PLACEMENTS (Banners & Home Structure)
+    // ------------------------
+    console.log("🖼️ Seeding Placements...");
+    const placements = [
+        // HOME PAGE
+        { page: "HOME", section: "TOP_BANNER", colSlug: "summer-sale", isBanner: true, order: 1, text: "SUMMER SALE - 50% OFF" },
+        { page: "HOME", section: "MID_BANNER", colSlug: "new-arrivals", isBanner: true, order: 2, text: "CHECK NEW ARRIVALS" },
+        { page: "HOME", section: "FEATURED_ROW", colSlug: "best-sellers", isBanner: false, order: 3, text: "BEST SELLERS" },
+        
+        // MEN PAGE
+        { page: "MEN", section: "TOP_BANNER", colSlug: "men-premium", isBanner: true, order: 1, text: "MEN'S PREMIUM COLLECTION" },
+        
+        // WOMEN PAGE
+        { page: "WOMEN", section: "TOP_BANNER", colSlug: "women-trends", isBanner: true, order: 1, text: "WOMEN'S LATEST TRENDS" },
+        
+        // KIDS PAGE
+        { page: "KIDS", section: "TOP_BANNER", colSlug: "kids-playroom", isBanner: true, order: 1, text: "KIDS PLAYROOM FAVORITES" },
+    ];
+
+    for (const p of placements) {
+        const col = collectionMap[p.colSlug];
+        if (!col) continue;
+
+        // Note: CollectionPlacement doesn't have a unique field besides ID, so we find existing first to avoid bloat
+        const existingPlacement = await prisma.collectionPlacement.findFirst({
+            where: {
+                page: p.page as any,
+                section: p.section as any,
+                collectionId: col.id,
+            }
+        });
+
+        if (!existingPlacement) {
+            await prisma.collectionPlacement.create({
+                data: {
+                    page: p.page as any,
+                    section: p.section as any,
+                    collectionId: col.id,
+                    isBanner: p.isBanner,
+                    displayOrder: p.order,
+                    imageUrl: getPlaceholderUrl(1200, 400, "333333", "FFFFFF", p.text),
+                },
+            });
+        }
+    }
+
+    // ------------------------
     // PRODUCT GENERATION
     // ------------------------
-    for (let i = 1; i <= PRODUCT_COUNT; i++) {
+    console.log("👕 Seeding Products & Variants...");
+    const existingProductCount = await prisma.product.count();
+    
+    // Only generate more if we have fewer than target
+    const productsToGenerate = Math.max(0, PRODUCT_COUNT - existingProductCount);
+    
+    for (let i = 1; i <= productsToGenerate; i++) {
         const category = randomFrom(categories);
         const genderLabel = randomFrom(genders);
-        if (!category || !genderLabel) continue;
+        const genEnum = genderEnumMap[genderLabel];
 
         const basePrice = randomPrice();
+        const productName = `${genderLabel}'s ${category.name} ${existingProductCount + i}`;
 
         const product = await prisma.product.create({
             data: {
-                name: `${category.name} ${i}`,
-                description: `High quality ${category.name.toLowerCase()} designed for modern lifestyle.`,
+                name: productName,
+                description: `Experience ultimate comfort and style with this ${productName.toLowerCase()}. Made with premium ${randomFrom(fabrics).toLowerCase()} fabric, perfect for any ${randomFrom(occasions).toLowerCase()} occasion.`,
                 categoryId: category.id,
                 isPublished: true,
-                gender: { set: genderMap[genderLabel] as any },
+                gender: { set: [genEnum] },
                 attributes: {
                     gender: genderLabel,
                     fabric: randomFrom(fabrics),
@@ -167,41 +222,82 @@ async function main() {
             },
         });
 
+        // Link to "New Arrivals" always
+        await prisma.productCollection.create({
+            data: {
+                productId: product.id,
+                collectionId: collectionMap["new-arrivals"].id,
+                displayOrder: i,
+            }
+        });
+
+        // 30% chance to be a Best Seller
+        if (Math.random() < 0.3) {
+            await prisma.productCollection.create({
+                data: {
+                    productId: product.id,
+                    collectionId: collectionMap["best-sellers"].id,
+                    displayOrder: i,
+                }
+            });
+        }
+
         // ------------------------
-        // VARIANTS (Multiple variants for most products)
+        // VARIANTS
         // ------------------------
-        const numVariants = Math.random() > 0.3 ? Math.floor(Math.random() * 4) + 2 : 1;
+        const numVariants = Math.floor(Math.random() * 3) + 2; // 2 to 4 variants
         const usedSkus = new Set<string>();
 
         for (let j = 0; j < numVariants; j++) {
             const color = randomFrom(colors);
             const size = randomFrom(SIZES);
-            const sku = `${category.slug}-${color.name.toLowerCase().replace(/\s+/g, "-")}-${size.toLowerCase()}-${i}`;
+            const sku = `${category.slug}-${color.name.toLowerCase().replace(/\s+/g, "-")}-${size.toLowerCase()}-${product.id.slice(0, 4)}`;
 
             if (usedSkus.has(sku)) continue;
             usedSkus.add(sku);
 
-            await prisma.productVariant.upsert({
-                where: { sku },
-                update: {},
-                create: {
+            const variant = await prisma.productVariant.create({
+                data: {
                     productId: product.id,
                     sku,
                     size,
                     colorName: color.name,
                     colorValue: `#${color.hex}`,
-                    stockQty: Math.floor(Math.random() * 100),
+                    stockQty: Math.floor(Math.random() * 100) + 10,
                     basePrice,
-                    originalPrice: basePrice + 400,
+                    originalPrice: basePrice + 500,
                     isDefault: usedSkus.size === 1,
                 },
             });
+
+            // ------------------------
+            // IMAGES for Variant
+            // ------------------------
+            const views = ["Front View", "Back View", "Side View", "Detail"];
+            for (let vIdx = 0; vIdx < views.length; vIdx++) {
+                const view = views[vIdx];
+                const textColor = color.name === "White" ? "000000" : "FFFFFF";
+                
+                await prisma.productVariantImage.create({
+                    data: {
+                        variantId: variant.id,
+                        imageUrl: getPlaceholderUrl(600, 800, color.hex, textColor, `${color.name} ${category.name} - ${view}`),
+                        isPrimary: vIdx === 0,
+                        displayOrder: vIdx,
+                    },
+                });
+            }
         }
     }
 
-    console.log(`✅ Successfully generated ${PRODUCT_COUNT} products`);
+    console.log(`✅ Seed completed! Created ${productsToGenerate} new products.`);
 }
 
 main()
-    .catch(console.error)
-    .finally(() => prisma.$disconnect());
+    .catch((e) => {
+        console.error(e);
+        process.exit(1);
+    })
+    .finally(async () => {
+        await prisma.$disconnect();
+    });

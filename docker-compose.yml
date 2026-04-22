@@ -6,8 +6,8 @@ services:
         environment:
             - NODE_ENV=production
             - PORT=3000
-            - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-ugp_bos}?schema=public
-            - LOKI_URL=http://loki:3100
+            - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@localhost:5432/${POSTGRES_DB:-ugp_bos}?schema=public
+            - LOKI_URL=http://localhost:3100
             - LOKI_ENABLED=true
             - LOG_LEVEL=info
             - APP_NAME=ugp-bos
@@ -15,7 +15,7 @@ services:
             - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS:-900000}
             - RATE_LIMIT_MAX=${RATE_LIMIT_MAX:-100}
             - REDIS_ENABLED=${REDIS_ENABLED:-false}
-            - REDIS_HOST=redis
+            - REDIS_HOST=localhost
             - REDIS_PORT=6379
             - REDIS_PASSWORD=${REDIS_PASSWORD:-}
             - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
@@ -50,8 +50,8 @@ services:
             - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
             - POSTGRES_DB=${POSTGRES_DB:-ugp_bos}
         # Only expose postgres port in development; remove or comment out for production
-        # ports:
-        #   - "5432:5432"
+        ports:
+            - "5432:5432"
         volumes:
             - postgres-data:/var/lib/postgresql/data
         healthcheck:
@@ -66,8 +66,8 @@ services:
     redis:
         image: redis:7-alpine
         # Only expose redis port in development; remove or comment out for production
-        # ports:
-        #   - "6379:6379"
+        ports:
+          - "6379:6379"
         volumes:
             - redis-data:/data
         command: redis-server --appendonly yes ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
@@ -87,8 +87,8 @@ services:
     loki:
         image: grafana/loki:2.9.0
         # Only expose loki port in development; remove or comment out for production
-        # ports:
-        #   - "3100:3100"
+        ports:
+          - "3100:3100"
         volumes:
             - loki-data:/loki
         command: -config.file=/etc/loki/local-config.yaml
@@ -125,7 +125,6 @@ services:
 networks:
     internal:
         driver: bridge
-        internal: true
     external:
         driver: bridge
 
