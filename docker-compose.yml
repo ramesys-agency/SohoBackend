@@ -114,6 +114,14 @@ services:
             - internal
             - external
 
+    adminer:
+        image: adminer:latest
+        restart: unless-stopped
+        ports:
+            - "8080:8080"
+        networks:
+            - internal
+
 networks:
     internal:
         driver: bridge
