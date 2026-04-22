@@ -3,7 +3,7 @@ FROM node:22.12.0-alpine AS builder
 
 WORKDIR /app
 
-COPY package*.json ./
+COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY prisma ./prisma/
@@ -20,7 +20,7 @@ WORKDIR /app
 
 RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
 
-COPY package*.json ./
+COPY package.json package-lock.json ./
 RUN npm ci --only=production
 
 COPY --from=builder /app/src/generated ./src/generated/
