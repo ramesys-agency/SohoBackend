@@ -10,11 +10,10 @@ model Category {
     description  String?
     isActive     Boolean      @default(true)
     displayOrder Int          @default(0)
-    gender       GenderType[]
-
     attributes CategoryAttribute[]
     products   Product[]
     sizeCharts SizeChart[]
+    genderImages CategoryImage[]
 
     createdAt DateTime  @default(now())
     updatedAt DateTime  @updatedAt
@@ -37,4 +36,14 @@ model CategoryAttribute {
     createdAt DateTime @default(now())
 
     @@unique([categoryId, key])
+}
+
+model CategoryImage {
+    id         String   @id @default(uuid())
+    categoryId String
+    category   Category @relation(fields: [categoryId], references: [id])
+    gender     GenderType
+    imageUrl   String
+
+    @@unique([categoryId, gender])
 }

@@ -24,7 +24,7 @@ export const createProductVariantSchema = z.object({
 export const createProductSchema = z.object({
     name: z.string().min(1, "Product name is required"),
     description: z.string().optional(),
-    categoryId: z.string().uuid("Invalid category ID"),
+    categoryIds: z.array(z.string().uuid("Invalid category ID")),
     collectionIds: z.array(z.string().uuid("Invalid collection ID")).optional(),
     attributes: z.record(z.string(), z.any()).optional().default({}),
     gender: z.array(z.enum(["MEN", "WOMEN", "KIDS"])).optional(),

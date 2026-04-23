@@ -1,6 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
 import { CategoryService } from "./category.service.js";
-import { GenderType } from "@prisma/client";
 
 export class CategoryController {
     private categoryService = new CategoryService();
@@ -10,7 +9,7 @@ export class CategoryController {
             const query = req.query as {
                 isActive?: string;
                 parentId?: string;
-                gender?: GenderType;
+                gender?: string;
                 page?: string;
                 limit?: string;
             };
@@ -27,10 +26,8 @@ export class CategoryController {
         next: NextFunction
     ): Promise<void> => {
         try {
-            const query = req.query as {
-                gender?: GenderType;
-            };
-            const categories = await this.categoryService.getParentCategories(query);
+            const query = req.query as {};
+            const categories = await this.categoryService.getParentCategories();
             res.status(200).json(categories);
         } catch (error) {
             next(error);
@@ -41,7 +38,6 @@ export class CategoryController {
         try {
             const data = req.body as {
                 name: string;
-                gender: GenderType[];
                 parentId?: string;
                 imageUrl?: string;
                 attributes?: Record<string, string> | any[];
@@ -58,7 +54,6 @@ export class CategoryController {
             const id = req.params["id"] as string;
             const data = req.body as {
                 name?: string;
-                gender?: GenderType[];
                 parentId?: string;
                 imageUrl?: string;
                 isActive?: boolean;
@@ -103,11 +98,19 @@ export class CategoryController {
         try {
             const query = req.query as {
                 isActive?: string;
-                gender?: GenderType;
                 page?: string;
                 limit?: string;
             };
             const result = await this.categoryService.getCategoryHierarchy(query);
+            res.status(200).json(result);
+        } catch (error) {
+            next(error);
+        }
+    };
+    getCategoryById = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+        try {
+            const id = req.params["id"] as string;
+            const result = await this.categoryService.getCategoryById(id);
             res.status(200).json(result);
         } catch (error) {
             next(error);

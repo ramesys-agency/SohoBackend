@@ -1,5 +1,4 @@
 import { PrismaService } from "../../core/services/index.js";
-import { GenderType } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 
 export class CategoryService {
@@ -8,17 +7,13 @@ export class CategoryService {
     async getAllCategories(query: {
         isActive?: string;
         parentId?: string;
-        gender?: GenderType;
+        gender?: string;
         page?: string;
         limit?: string;
     }) {
         const where: any = {};
+        const gender = query.gender?.toUpperCase();
 
-        if (query.gender) {
-            where.gender = {
-                has: query.gender,
-            };
-        }
 
         if (query.isActive !== undefined) {
             where.isActive = query.isActive === "true";
@@ -32,6 +27,16 @@ export class CategoryService {
             }
         }
 
+        if (gender) {
+            where.products = {
+                some: {
+                    gender: {
+                        has: gender,
+                    },
+                },
+            };
+        }
+
         const page = parseInt(query.page || "1", 10);
         const limit = parseInt(query.limit || "10", 10);
         const skip = (page - 1) * limit;
@@ -41,6 +46,9 @@ export class CategoryService {
                 where,
                 include: {
                     children: true,
+                    genderImages: gender ? {
+                        where: { gender: gender as any }
+                    } : false
                 },
                 orderBy: {
                     displayOrder: "asc",
@@ -53,7 +61,10 @@ export class CategoryService {
 
         return {
             success: true,
-            data: categories,
+            data: categories.map((cat: any) => ({
+                ...cat,
+                imageUrl: cat.genderImages?.[0]?.imageUrl || cat.imageUrl
+            })),
             meta: {
                 total,
                 page,
@@ -63,14 +74,10 @@ export class CategoryService {
         };
     }
 
-    async getParentCategories(query: { gender?: GenderType }) {
+    async getParentCategories() {
         const where: Prisma.CategoryWhereInput = {
             parentId: null,
         };
-
-        if (query.gender) {
-            where.gender = { has: query.gender };
-        }
 
         const categories = await this.prisma.getClient().category.findMany({
             where,
@@ -90,9 +97,9 @@ export class CategoryService {
 
     async createCategory(data: {
         name: string;
-        gender: GenderType[];
         parentId?: string;
         imageUrl?: string;
+        genderImages?: { gender: string; imageUrl: string }[];
         attributes?: Record<string, any> | any[];
     }) {
         const slug = data.name
@@ -132,9 +139,16 @@ export class CategoryService {
             data: {
                 name: data.name,
                 slug: finalSlug,
-                gender: data.gender,
                 parentId: data.parentId || null,
                 imageUrl: data.imageUrl || null,
+                ...(data.genderImages && data.genderImages.length > 0 && {
+                    genderImages: {
+                        create: data.genderImages.map(gi => ({
+                            gender: gi.gender as any,
+                            imageUrl: gi.imageUrl
+                        }))
+                    }
+                }),
                 ...(attributesCreateData.length > 0 && {
                     attributes: {
                         create: attributesCreateData,
@@ -143,6 +157,7 @@ export class CategoryService {
             },
             include: {
                 attributes: true,
+                genderImages: true,
             },
         });
 
@@ -157,11 +172,11 @@ export class CategoryService {
         id: string,
         data: {
             name?: string;
-            gender?: GenderType[];
             parentId?: string;
             imageUrl?: string;
             isActive?: boolean;
             displayOrder?: number;
+            genderImages?: { gender: string; imageUrl: string }[];
             attributes?: Record<string, any> | any[];
         }
     ) {
@@ -190,11 +205,22 @@ export class CategoryService {
             }
             updateData.slug = finalSlug;
         }
-        if (data.gender !== undefined) updateData.gender = data.gender;
         if (data.parentId !== undefined) updateData.parentId = data.parentId || null;
         if (data.imageUrl !== undefined) updateData.imageUrl = data.imageUrl || null;
         if (data.isActive !== undefined) updateData.isActive = data.isActive;
         if (data.displayOrder !== undefined) updateData.displayOrder = data.displayOrder;
+
+        if (data.genderImages !== undefined) {
+            await this.prisma.getClient().categoryImage.deleteMany({ where: { categoryId: id } });
+            if (data.genderImages.length > 0) {
+                updateData.genderImages = {
+                    create: data.genderImages.map(gi => ({
+                        gender: gi.gender as any,
+                        imageUrl: gi.imageUrl
+                    }))
+                };
+            }
+        }
 
         // Handle attributes: delete all existing and recreate
         if (data.attributes !== undefined) {
@@ -231,7 +257,10 @@ export class CategoryService {
         const updated = await this.prisma.getClient().category.update({
             where: { id },
             data: updateData,
-            include: { attributes: true },
+            include: { 
+                attributes: true,
+                genderImages: true,
+            },
         });
 
         return { success: true, data: updated, message: "Category updated successfully" };
@@ -318,7 +347,6 @@ export class CategoryService {
 
     async getCategoryHierarchy(query: {
         isActive?: string;
-        gender?: GenderType;
         page?: string;
         limit?: string;
     }) {
@@ -330,10 +358,6 @@ export class CategoryService {
             where.isActive = query.isActive === "true";
         }
 
-        if (query.gender) {
-            where.gender = { has: query.gender };
-        }
-
         const page = parseInt(query.page || "1", 10);
         const limit = parseInt(query.limit || "10", 10);
         const skip = (page - 1) * limit;
@@ -342,12 +366,10 @@ export class CategoryService {
         if (query.isActive !== undefined) {
             childWhere.isActive = query.isActive === "true";
         }
-        if (query.gender) {
-            childWhere.gender = { has: query.gender };
-        }
 
         const childrenInclude = {
             _count: { select: { products: true } },
+            genderImages: true,
         } as const;
 
         const childrenArgs = {
@@ -363,6 +385,7 @@ export class CategoryService {
                     _count: {
                         select: { products: true },
                     },
+                    genderImages: true,
                     children: childrenArgs,
                 },
                 orderBy: { displayOrder: "asc" },
@@ -396,6 +419,27 @@ export class CategoryService {
                 limit,
                 totalPages: Math.ceil(total / limit),
             },
+        };
+    }
+
+    async getCategoryById(id: string) {
+        const category = await this.prisma.getClient().category.findUnique({
+            where: { id },
+            include: {
+                attributes: true,
+                genderImages: true,
+                parent: true,
+                children: true,
+            },
+        });
+
+        if (!category) {
+            throw new Error("Category not found");
+        }
+
+        return {
+            success: true,
+            data: category,
         };
     }
 }

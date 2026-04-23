@@ -13,3 +13,4 @@ categoryRoutes.put("/:id", categoryController.updateCategory);
 categoryRoutes.delete("/:id", categoryController.deleteCategory);
 categoryRoutes.get("/parents", categoryController.getParentCategories);
 categoryRoutes.get("/hierarchy", categoryController.getCategoryHierarchy);
+categoryRoutes.get("/:id", categoryController.getCategoryById);

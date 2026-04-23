@@ -26,8 +26,8 @@ model Product {
     deletedAt DateTime?
     wishlists Wishlist[]
 
-    @@index([categoryId])
     @@index([attributes], type: Gin)
+    @@index([categoryId])
 }
 
 model ProductVariant {

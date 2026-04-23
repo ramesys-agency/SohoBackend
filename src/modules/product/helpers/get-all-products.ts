@@ -174,20 +174,16 @@ export const buildFilterConditions = (params: {
     }
 
     if (gender && gender !== "ALL") {
-        const genderMap: Record<string, string> = {
-            MEN: "Men",
-            WOMEN: "Women",
-            KIDS: "Kids",
-        };
         const genders = Array.isArray(gender) ? gender : [gender];
-        const genderConditions = genders.map((g) => ({
-            attributes: {
-                path: ["gender"],
-                equals: genderMap[g.toUpperCase()] ?? g,
-            },
-        }));
-        if (!where.AND) where.AND = [];
-        where.AND.push({ OR: genderConditions });
+        const validGenders = genders
+            .map((g) => g.toUpperCase())
+            .filter((g) => ["MEN", "WOMEN", "KIDS"].includes(g));
+
+        if (validGenders.length > 0) {
+            where.gender = {
+                hasSome: validGenders,
+            };
+        }
     }
 
     if (dynamicAttributes) {

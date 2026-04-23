@@ -1,11 +1,14 @@
 import { type Request, type Response, type NextFunction } from "express";
 import multer from "multer";
-import { getDummyUrl } from "./upload.helper.js";
+import { StorageService } from "../../core/services/storage.service.js";
+import { randomBytes } from "crypto";
 
 const storage = multer.memoryStorage();
 export const upload = multer({ storage });
 
 export class UploadController {
+    private storageService = new StorageService();
+
     uploadFile = async (req: Request, res: Response, next: NextFunction) => {
         try {
             if (!req.file) {
@@ -14,21 +17,27 @@ export class UploadController {
             }
 
             const file = req.file;
-            const dummyUrl = getDummyUrl(file);
+            const folder = (req.body.folder as string) || "uploads";
+            const fileName = (req.body.fileName as string) || "file";
+            
+            // Format: folder/fileName_randomId.ext
+            const fileExt = file.originalname.split(".").pop();
+            const randomId = randomBytes(4).toString("hex");
+            const key = `${folder}/${fileName}_${randomId}.${fileExt}`;
 
-            if (!dummyUrl) {
-                res.status(400).json({
-                    message: "Invalid file type. Only images and videos are allowed.",
-                });
-                return;
-            }
+            const url = await this.storageService.uploadFile(
+                file.buffer,
+                key,
+                file.mimetype
+            );
 
             res.status(200).json({
                 message: "File uploaded successfully",
                 data: {
-                    url: dummyUrl,
+                    url,
                     filename: file.originalname,
                     mimetype: file.mimetype,
+                    key,
                 },
             });
         } catch (error) {

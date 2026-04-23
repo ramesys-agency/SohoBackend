@@ -297,7 +297,7 @@ export class ProductService implements IProductService {
                 isAddedToCart: defaultVariant ? cartVariantIds.has(defaultVariant.id) : false,
                 inStock: p.variants.some((v) => v.stockQty > 0),
                 category: p.category,
-                gender: Array.isArray((p.attributes as any)?.gender) ? (p.attributes as any).gender : ((p.attributes as any)?.gender ? [(p.attributes as any).gender] : []),
+                gender: p.gender,
                 createdAt: p.createdAt,
             };
 

@@ -99,26 +99,63 @@ async function main() {
     // ------------------------
     console.log("📂 Seeding Categories...");
     const categoryDefs = [
-        { name: "T-Shirts", slug: "t-shirts", gender: ["MEN", "WOMEN", "KIDS"] },
-        { name: "Shirts", slug: "shirts", gender: ["MEN", "WOMEN", "KIDS"] },
-        { name: "Jeans", slug: "jeans", gender: ["MEN", "WOMEN", "KIDS"] },
-        { name: "Dresses", slug: "dresses", gender: ["WOMEN", "KIDS"] },
-        { name: "Jackets", slug: "jackets", gender: ["MEN", "WOMEN", "KIDS"] },
-        { name: "Accessories", slug: "accessories", gender: ["MEN", "WOMEN", "KIDS"] },
+        { name: "T-Shirts", slug: "t-shirts" },
+        { name: "Shirts", slug: "shirts" },
+        { name: "Jeans", slug: "jeans" },
+        { name: "Dresses", slug: "dresses" },
+        { name: "Jackets", slug: "jackets" },
+        { name: "Accessories", slug: "accessories" },
     ];
 
     const categories = [];
     for (const def of categoryDefs) {
         const cat = await prisma.category.upsert({
             where: { slug: def.slug },
-            update: { gender: { set: def.gender as any } },
+            update: {},
             create: {
                 name: def.name,
                 slug: def.slug,
-                gender: { set: def.gender as any },
-                imageUrl: getPlaceholderUrl(400, 400, "CCCCCC", "333333", def.name),
+                imageUrl: getPlaceholderUrl(400, 400, "E2E8F0", "475569", def.name),
             },
         });
+
+        // Seed Gender Specific Images
+        const genderStyles: Record<string, { bg: string; text: string }> = {
+            MEN: { bg: "1E293B", text: "FFFFFF" },
+            WOMEN: { bg: "BE185D", text: "FFFFFF" },
+            KIDS: { bg: "15803D", text: "FFFFFF" },
+        };
+
+        for (const gender of ["MEN", "WOMEN", "KIDS"]) {
+            await prisma.categoryImage.upsert({
+                where: {
+                    categoryId_gender: {
+                        categoryId: cat.id,
+                        gender: gender as any,
+                    },
+                },
+                update: {
+                    imageUrl: getPlaceholderUrl(
+                        400,
+                        400,
+                        genderStyles[gender].bg,
+                        genderStyles[gender].text,
+                        `${def.name} - ${gender}`
+                    ),
+                },
+                create: {
+                    categoryId: cat.id,
+                    gender: gender as any,
+                    imageUrl: getPlaceholderUrl(
+                        400,
+                        400,
+                        genderStyles[gender].bg,
+                        genderStyles[gender].text,
+                        `${def.name} - ${gender}`
+                    ),
+                },
+            });
+        }
         categories.push(cat);
     }
 
@@ -133,6 +170,13 @@ async function main() {
         { name: "Men's Premium", slug: "men-premium", gender: ["MEN"] },
         { name: "Women's Trends", slug: "women-trends", gender: ["WOMEN"] },
         { name: "Kids Playroom", slug: "kids-playroom", gender: ["KIDS"] },
+        { name: "Trending Now", slug: "trending-now", gender: ["MEN", "WOMEN", "KIDS"] },
+        { name: "Budget Buys", slug: "budget-buys", gender: ["MEN", "WOMEN", "KIDS"] },
+        { name: "Premium Collection", slug: "premium-collection", gender: ["MEN", "WOMEN", "KIDS"] },
+        { name: "Festive Deals", slug: "festive-deals", gender: ["MEN", "WOMEN", "KIDS"] },
+        { name: "Office Basics", slug: "office-basics", gender: ["MEN", "WOMEN", "KIDS"] },
+        { name: "Everyday Essentials", slug: "everyday-essentials", gender: ["MEN", "WOMEN", "KIDS"] },
+        { name: "Limited Edition", slug: "limited-edition", gender: ["MEN", "WOMEN", "KIDS"] },
     ];
 
     const collectionMap: Record<string, any> = {};
@@ -209,6 +253,71 @@ async function main() {
             order: 1,
             text: "KIDS PLAYROOM FAVORITES",
         },
+
+        // ADDITIONAL PLACEMENTS
+        {
+            page: "HOME",
+            section: "GRID_SECTION",
+            colSlug: "trending-now",
+            isBanner: false,
+            order: 4,
+            text: "TRENDING NOW",
+        },
+        {
+            page: "HOME",
+            section: "GRID_SECTION",
+            colSlug: "budget-buys",
+            isBanner: false,
+            order: 5,
+            text: "BUDGET BUYS",
+        },
+        {
+            page: "OFFER",
+            section: "TOP_BANNER",
+            colSlug: "festive-deals",
+            isBanner: true,
+            order: 1,
+            text: "FESTIVE MEGA DEALS",
+        },
+        {
+            page: "MEN",
+            section: "FEATURED_ROW",
+            colSlug: "office-basics",
+            isBanner: false,
+            order: 2,
+            text: "OFFICE BASICS FOR MEN",
+        },
+        // MEN GRID
+        { page: "MEN", section: "GRID_SECTION", colSlug: "new-arrivals", isBanner: false, order: 3, text: "NEW ARRIVALS" },
+        { page: "MEN", section: "GRID_SECTION", colSlug: "best-sellers", isBanner: false, order: 4, text: "BEST SELLERS" },
+        { page: "MEN", section: "GRID_SECTION", colSlug: "trending-now", isBanner: false, order: 5, text: "TRENDING" },
+        { page: "MEN", section: "GRID_SECTION", colSlug: "budget-buys", isBanner: false, order: 6, text: "BUDGET BUYS" },
+        { page: "MEN", section: "GRID_SECTION", colSlug: "everyday-essentials", isBanner: false, order: 7, text: "EVERYDAY" },
+        { page: "MEN", section: "GRID_SECTION", colSlug: "limited-edition", isBanner: false, order: 8, text: "LIMITED" },
+
+        {
+            page: "WOMEN",
+            section: "FEATURED_ROW",
+            colSlug: "premium-collection",
+            isBanner: false,
+            order: 2,
+            text: "PREMIUM SELECTION",
+        },
+        // WOMEN GRID
+        { page: "WOMEN", section: "GRID_SECTION", colSlug: "new-arrivals", isBanner: false, order: 3, text: "NEW ARRIVALS" },
+        { page: "WOMEN", section: "GRID_SECTION", colSlug: "best-sellers", isBanner: false, order: 4, text: "BEST SELLERS" },
+        { page: "WOMEN", section: "GRID_SECTION", colSlug: "trending-now", isBanner: false, order: 5, text: "TRENDING" },
+        { page: "WOMEN", section: "GRID_SECTION", colSlug: "summer-sale", isBanner: false, order: 6, text: "SUMMER SALE" },
+        { page: "WOMEN", section: "GRID_SECTION", colSlug: "everyday-essentials", isBanner: false, order: 7, text: "EVERYDAY" },
+        { page: "WOMEN", section: "GRID_SECTION", colSlug: "limited-edition", isBanner: false, order: 8, text: "LIMITED" },
+
+        // KIDS GRID
+        { page: "KIDS", section: "GRID_SECTION", colSlug: "new-arrivals", isBanner: false, order: 2, text: "NEW ARRIVALS" },
+        { page: "KIDS", section: "GRID_SECTION", colSlug: "best-sellers", isBanner: false, order: 3, text: "BEST SELLERS" },
+        { page: "KIDS", section: "GRID_SECTION", colSlug: "trending-now", isBanner: false, order: 4, text: "TRENDING" },
+        { page: "KIDS", section: "GRID_SECTION", colSlug: "festive-deals", isBanner: false, order: 5, text: "FESTIVE" },
+        { page: "KIDS", section: "GRID_SECTION", colSlug: "budget-buys", isBanner: false, order: 6, text: "BUDGET BUYS" },
+        { page: "KIDS", section: "GRID_SECTION", colSlug: "everyday-essentials", isBanner: false, order: 7, text: "EVERYDAY" },
     ];
 
     for (const p of placements) {
@@ -224,6 +333,10 @@ async function main() {
             },
         });
 
+        const width = p.section === "GRID_SECTION" ? 600 : 1200;
+        const height = p.section === "GRID_SECTION" ? 800 : 400;
+        const imageUrl = getPlaceholderUrl(width, height, "333333", "FFFFFF", p.text);
+
         if (!existingPlacement) {
             await prisma.collectionPlacement.create({
                 data: {
@@ -232,7 +345,16 @@ async function main() {
                     collectionId: col.id,
                     isBanner: p.isBanner,
                     displayOrder: p.order,
-                    imageUrl: getPlaceholderUrl(1200, 400, "333333", "FFFFFF", p.text),
+                    imageUrl,
+                },
+            });
+        } else {
+            await prisma.collectionPlacement.update({
+                where: { id: existingPlacement.id },
+                data: {
+                    imageUrl,
+                    displayOrder: p.order,
+                    isBanner: p.isBanner,
                 },
             });
         }
@@ -301,6 +423,132 @@ async function main() {
                     create: {
                         productId: product.id,
                         collectionId: collectionMap["best-sellers"].id,
+                        displayOrder: i,
+                    },
+                });
+            }
+
+            // Link to "Trending Now" (20% chance)
+            if (Math.random() < 0.2) {
+                await prisma.productCollection.upsert({
+                    where: {
+                        productId_collectionId: {
+                            productId: product.id,
+                            collectionId: collectionMap["trending-now"].id,
+                        },
+                    },
+                    update: {},
+                    create: {
+                        productId: product.id,
+                        collectionId: collectionMap["trending-now"].id,
+                        displayOrder: i,
+                    },
+                });
+            }
+
+            // Link to "Budget Buys" (Price < 1000)
+            if (basePrice < 1000) {
+                await prisma.productCollection.upsert({
+                    where: {
+                        productId_collectionId: {
+                            productId: product.id,
+                            collectionId: collectionMap["budget-buys"].id,
+                        },
+                    },
+                    update: {},
+                    create: {
+                        productId: product.id,
+                        collectionId: collectionMap["budget-buys"].id,
+                        displayOrder: i,
+                    },
+                });
+            }
+
+            // Link to "Premium Collection" (Price > 1800)
+            if (basePrice > 1800) {
+                await prisma.productCollection.upsert({
+                    where: {
+                        productId_collectionId: {
+                            productId: product.id,
+                            collectionId: collectionMap["premium-collection"].id,
+                        },
+                    },
+                    update: {},
+                    create: {
+                        productId: product.id,
+                        collectionId: collectionMap["premium-collection"].id,
+                        displayOrder: i,
+                    },
+                });
+            }
+
+            // Link to "Festive Deals" (Occasion is Festive)
+            if (product.attributes && (product.attributes as any).occasion === "Festive") {
+                await prisma.productCollection.upsert({
+                    where: {
+                        productId_collectionId: {
+                            productId: product.id,
+                            collectionId: collectionMap["festive-deals"].id,
+                        },
+                    },
+                    update: {},
+                    create: {
+                        productId: product.id,
+                        collectionId: collectionMap["festive-deals"].id,
+                        displayOrder: i,
+                    },
+                });
+            }
+
+            // Link to "Office Basics" (Occasion is Formal)
+            if (product.attributes && (product.attributes as any).occasion === "Formal") {
+                await prisma.productCollection.upsert({
+                    where: {
+                        productId_collectionId: {
+                            productId: product.id,
+                            collectionId: collectionMap["office-basics"].id,
+                        },
+                    },
+                    update: {},
+                    create: {
+                        productId: product.id,
+                        collectionId: collectionMap["office-basics"].id,
+                        displayOrder: i,
+                    },
+                });
+            }
+
+            // Link to "Everyday Essentials" (Occasion is Casual)
+            if (product.attributes && (product.attributes as any).occasion === "Casual") {
+                await prisma.productCollection.upsert({
+                    where: {
+                        productId_collectionId: {
+                            productId: product.id,
+                            collectionId: collectionMap["everyday-essentials"].id,
+                        },
+                    },
+                    update: {},
+                    create: {
+                        productId: product.id,
+                        collectionId: collectionMap["everyday-essentials"].id,
+                        displayOrder: i,
+                    },
+                });
+            }
+
+            // Link to "Limited Edition" (5% chance)
+            if (Math.random() < 0.05) {
+                await prisma.productCollection.upsert({
+                    where: {
+                        productId_collectionId: {
+                            productId: product.id,
+                            collectionId: collectionMap["limited-edition"].id,
+                        },
+                    },
+                    update: {},
+                    create: {
+                        productId: product.id,
+                        collectionId: collectionMap["limited-edition"].id,
                         displayOrder: i,
                     },
                 });
