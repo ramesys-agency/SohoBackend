@@ -27,7 +27,8 @@
         "docker:dev:down": "docker compose -f docker-compose.dev.yml --profile all down",
         "docker:build": "docker compose build",
         "docker:up": "docker compose up -d",
-        "docker:down": "docker compose down"
+        "docker:down": "docker compose down",
+        "db:sync-locations": "tsx src/scripts/sync-locations.ts"
     },
     "prisma": {
         "seed": "tsx prisma/seed.ts"

@@ -38,6 +38,8 @@ services:
                 condition: service_healthy
             loki:
                 condition: service_started
+            minio:
+                condition: service_started
         restart: unless-stopped
         networks:
             - internal
@@ -122,6 +124,22 @@ services:
         networks:
             - internal
 
+    minio:
+        image: minio/minio:latest
+        ports:
+            - "9000:9000"
+            - "9001:9001"
+        environment:
+            - MINIO_ROOT_USER=${ACCESS_KEY:-minioadmin}
+            - MINIO_ROOT_PASSWORD=${SECRET_KEY:-minioadmin}
+        volumes:
+            - minio-data:/data
+        command: server /data --console-address ":9001"
+        restart: unless-stopped
+        networks:
+            - internal
+            - external
+
 networks:
     internal:
         driver: bridge
@@ -133,3 +151,4 @@ volumes:
     redis-data:
     loki-data:
     grafana-data:
+    minio-data:
