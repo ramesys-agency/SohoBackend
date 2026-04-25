@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { LocationService } from "../modules/logistics/location.service.js";
 import { logger } from "../config/logger.js";
 
