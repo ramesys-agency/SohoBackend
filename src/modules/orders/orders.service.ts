@@ -30,7 +30,7 @@ export class OrderService {
         });
     }
 
-    async getOrderById(userId: string, orderId: string) {
+    async getOrderById(userId: string, orderId: string, userRole?: string) {
         const order = await this.prisma.getClient().order.findUnique({
             where: { id: orderId },
             include: {
@@ -56,7 +56,9 @@ export class OrderService {
             throw new NotFoundError("Order not found");
         }
 
-        if (order.userId !== userId) {
+        const isAdmin = userRole === "admin";
+
+        if (order.userId !== userId && !isAdmin) {
             throw new ForbiddenError("You are not authorized to view this order");
         }
 

@@ -1,5 +1,6 @@
 import { PrismaService } from "../../core/services/index.js";
-import type { Prisma } from "@prisma/client";
+import { GenderType, type Prisma } from "@prisma/client";
+import { NotFoundError } from "../../core/errors/http-errors.js";
 
 export class CategoryService {
     private prisma = new PrismaService();
@@ -16,7 +17,7 @@ export class CategoryService {
 
 
         if (query.isActive !== undefined) {
-            where.isActive = query.isActive === "true" || query.isActive === true;
+            where.isActive = String(query.isActive) === "true";
         }
 
         if (query.parentId !== undefined) {
@@ -27,7 +28,7 @@ export class CategoryService {
             }
         }
 
-        if (gender) {
+        if (gender && Object.values(GenderType).includes(gender as GenderType)) {
             // Check if categories have products for this gender
             // OR have gender-specific images
             // OR have children that match these criteria
@@ -36,7 +37,7 @@ export class CategoryService {
                     products: {
                         some: {
                             gender: {
-                                has: gender as any,
+                                has: gender as GenderType,
                             },
                         },
                     },
@@ -44,7 +45,7 @@ export class CategoryService {
                 {
                     genderImages: {
                         some: {
-                            gender: gender as any,
+                            gender: gender as GenderType,
                         },
                     },
                 },
@@ -56,7 +57,7 @@ export class CategoryService {
                                     products: {
                                         some: {
                                             gender: {
-                                                has: gender as any,
+                                                has: gender as GenderType,
                                             },
                                         },
                                     },
@@ -64,7 +65,7 @@ export class CategoryService {
                                 {
                                     genderImages: {
                                         some: {
-                                            gender: gender as any,
+                                            gender: gender as GenderType,
                                         },
                                     },
                                 },
@@ -75,8 +76,10 @@ export class CategoryService {
             ];
         }
 
-        const page = parseInt(query.page || "1", 10);
-        const limit = parseInt(query.limit || "10", 10);
+        let page = parseInt(query.page || "1", 10);
+        let limit = parseInt(query.limit || "10", 10);
+        if (isNaN(page) || page < 1) page = 1;
+        if (isNaN(limit) || limit < 1) limit = 10;
         const skip = (page - 1) * limit;
 
         const [categories, total] = await Promise.all([
@@ -84,9 +87,11 @@ export class CategoryService {
                 where,
                 include: {
                     children: true,
-                    genderImages: gender ? {
-                        where: { gender: gender as any }
-                    } : false
+                    ...(gender && Object.values(GenderType).includes(gender as GenderType) ? {
+                        genderImages: {
+                            where: { gender: gender as GenderType }
+                        }
+                    } : {})
                 },
                 orderBy: {
                     displayOrder: "asc",
@@ -472,7 +477,7 @@ export class CategoryService {
         });
 
         if (!category) {
-            throw new Error("Category not found");
+            throw new NotFoundError("Category not found");
         }
 
         return {

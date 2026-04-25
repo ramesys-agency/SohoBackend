@@ -20,14 +20,14 @@ export class OrderController {
 
     getOrderById = async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const userId = (req as any).user.id;
+            const user = (req as any).user;
             const orderId = req.params.orderId as string;
 
             if (!orderId) {
                 throw new BadRequestError("Order ID is required");
             }
 
-            const order = await this.orderService.getOrderById(userId, orderId);
+            const order = await this.orderService.getOrderById(user.id, orderId, user.role);
             res.status(200).json({
                 message: "Order fetched successfully",
                 data: order,
