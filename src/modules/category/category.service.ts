@@ -16,11 +16,11 @@ export class CategoryService {
 
 
         if (query.isActive !== undefined) {
-            where.isActive = query.isActive === "true";
+            where.isActive = query.isActive === "true" || query.isActive === true;
         }
 
         if (query.parentId !== undefined) {
-            if (query.parentId === "null") {
+            if (query.parentId === "null" || query.parentId === null) {
                 where.parentId = null;
             } else {
                 where.parentId = query.parentId;
@@ -28,13 +28,51 @@ export class CategoryService {
         }
 
         if (gender) {
-            where.products = {
-                some: {
-                    gender: {
-                        has: gender,
+            // Check if categories have products for this gender
+            // OR have gender-specific images
+            // OR have children that match these criteria
+            where.OR = [
+                {
+                    products: {
+                        some: {
+                            gender: {
+                                has: gender as any,
+                            },
+                        },
                     },
                 },
-            };
+                {
+                    genderImages: {
+                        some: {
+                            gender: gender as any,
+                        },
+                    },
+                },
+                {
+                    children: {
+                        some: {
+                            OR: [
+                                {
+                                    products: {
+                                        some: {
+                                            gender: {
+                                                has: gender as any,
+                                            },
+                                        },
+                                    },
+                                },
+                                {
+                                    genderImages: {
+                                        some: {
+                                            gender: gender as any,
+                                        },
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
+            ];
         }
 
         const page = parseInt(query.page || "1", 10);

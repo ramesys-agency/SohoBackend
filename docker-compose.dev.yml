@@ -58,8 +58,23 @@ services:
             - loki
         restart: unless-stopped
 
+    minio:
+        profiles: ["minio", "storage", "all"]
+        image: minio/minio:latest
+        ports:
+            - "${MINIO_PORT:-9000}:9000"
+            - "${MINIO_CONSOLE_PORT:-9001}:9001"
+        environment:
+            - MINIO_ROOT_USER=${ACCESS_KEY:-minioadmin}
+            - MINIO_ROOT_PASSWORD=${SECRET_KEY:-minioadmin}
+        volumes:
+            - soho-minio-data:/data
+        command: server /data --console-address ":9001"
+        restart: unless-stopped
+
 volumes:
     soho-postgres-data:
     soho-redis-data:
     soho-loki-data:
     soho-grafana-data:
+    soho-minio-data:
