@@ -2,10 +2,11 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import { UserService } from "./user.service.js";
 import { updateProfileSchema } from "./user.type.js";
-import { getDummyUrl } from "../upload/upload.helper.js";
+import { StorageService } from "../../core/services/storage.service.js";
 
 export class UserController {
     private userService = new UserService();
+    private storageService = new StorageService();
 
     updateProfile = async (req: Request, res: Response) => {
         try {
@@ -42,11 +43,15 @@ export class UserController {
                 return res.status(400).json({ message: "No file uploaded" });
             }
 
-            const avatarUrl = getDummyUrl(req.file);
+            const file = req.file;
+            const fileExt = file.originalname.split(".").pop();
+            const key = `avatars/${userId}_${Date.now()}.${fileExt}`;
 
-            if (!avatarUrl) {
-                return res.status(400).json({ message: "Invalid file type" });
-            }
+            const avatarUrl = await this.storageService.uploadFile(
+                file.buffer,
+                key,
+                file.mimetype
+            );
 
             const updatedUser = await this.userService.updateAvatar(userId, avatarUrl);
 

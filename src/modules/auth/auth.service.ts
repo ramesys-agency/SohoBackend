@@ -80,6 +80,7 @@ export class AuthService {
                 email: user.email,
                 fullName: user.fullName,
                 role: user.role,
+                avatar: user.avatar,
             },
             accessToken,
             refreshToken,
@@ -119,6 +120,7 @@ export class AuthService {
                 email: user.email,
                 fullName: user.fullName,
                 role: user.role,
+                avatar: user.avatar,
             },
             accessToken,
             refreshToken,
@@ -171,6 +173,7 @@ export class AuthService {
                 fullName: true,
                 phone: true,
                 role: true,
+                avatar: true,
             },
         });
 
@@ -184,6 +187,7 @@ export class AuthService {
             fullName: user.fullName,
             phone: user.phone,
             role: user.role,
+            avatar: user.avatar,
         };
     }
 
