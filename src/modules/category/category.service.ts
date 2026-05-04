@@ -183,20 +183,24 @@ export class CategoryService {
         let attributesCreateData: any[] = [];
         if (data.attributes) {
             if (Array.isArray(data.attributes)) {
-                attributesCreateData = data.attributes.map((attr) => ({
-                    key: attr.key,
-                    label: attr.label || attr.key,
-                    type: attr.type || "text",
-                    options: attr.options || null,
-                    isFilterable: attr.isFilterable || false,
-                }));
-            } else {
-                attributesCreateData = Object.entries(data.attributes).map(([key, value]) => ({
-                    key: key,
-                    label: String(value), // Assuming value is the label
-                    type: "text",
-                    isFilterable: false,
-                }));
+                attributesCreateData = data.attributes
+                    .filter((attr: any) => attr && attr.key) // Ensure key exists
+                    .map((attr: any) => ({
+                        key: attr.key,
+                        label: attr.label || attr.key,
+                        type: attr.type || "text",
+                        options: attr.options || null,
+                        isFilterable: attr.isFilterable || false,
+                    }));
+            } else if (typeof data.attributes === "object") {
+                attributesCreateData = Object.entries(data.attributes)
+                    .filter(([key]) => key) // Ensure key is not empty
+                    .map(([key, value]) => ({
+                        key: key,
+                        label: String(value || key),
+                        type: "text",
+                        isFilterable: false,
+                    }));
             }
         }
 
@@ -295,22 +299,26 @@ export class CategoryService {
 
             let attributesCreateData: any[] = [];
             if (Array.isArray(data.attributes)) {
-                attributesCreateData = data.attributes.map((attr) => ({
-                    key: attr.key,
-                    label: attr.label || attr.key,
-                    type: attr.type || "text",
-                    options: attr.options || null,
-                    isFilterable: attr.isFilterable || false,
-                    categoryId: id,
-                }));
-            } else {
-                attributesCreateData = Object.entries(data.attributes).map(([key, value]) => ({
-                    key,
-                    label: String(value),
-                    type: "text",
-                    isFilterable: false,
-                    categoryId: id,
-                }));
+                attributesCreateData = data.attributes
+                    .filter((attr: any) => attr && attr.key) // Ensure key exists
+                    .map((attr: any) => ({
+                        key: attr.key,
+                        label: attr.label || attr.key,
+                        type: attr.type || "text",
+                        options: attr.options || null,
+                        isFilterable: attr.isFilterable || false,
+                        categoryId: id,
+                    }));
+            } else if (typeof data.attributes === "object") {
+                attributesCreateData = Object.entries(data.attributes)
+                    .filter(([key]) => key) // Ensure key is not empty
+                    .map(([key, value]) => ({
+                        key,
+                        label: String(value || key),
+                        type: "text",
+                        isFilterable: false,
+                        categoryId: id,
+                    }));
             }
             if (attributesCreateData.length > 0) {
                 await this.prisma
