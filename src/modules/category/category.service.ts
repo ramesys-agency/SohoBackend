@@ -87,11 +87,7 @@ export class CategoryService {
                 where,
                 include: {
                     children: true,
-                    ...(gender && Object.values(GenderType).includes(gender as GenderType) ? {
-                        genderImages: {
-                            where: { gender: gender as GenderType }
-                        }
-                    } : {})
+                    genderImages: true, // Always include to allow robust fallbacks
                 },
                 orderBy: {
                     displayOrder: "asc",
@@ -104,10 +100,22 @@ export class CategoryService {
 
         return {
             success: true,
-            data: categories.map((cat: any) => ({
-                ...cat,
-                imageUrl: cat.genderImages?.[0]?.imageUrl || cat.imageUrl
-            })),
+            data: categories.map((cat: any) => {
+                // Determine the best image:
+                // 1. Try image for the requested gender
+                // 2. Fallback to any available gender image
+                // 3. Fallback to base imageUrl
+                const requestedGenderImage = gender 
+                    ? cat.genderImages?.find((img: any) => img.gender === gender.toUpperCase())?.imageUrl 
+                    : null;
+                
+                const fallbackImage = cat.genderImages?.[0]?.imageUrl;
+
+                return {
+                    ...cat,
+                    imageUrl: requestedGenderImage || fallbackImage || cat.imageUrl
+                };
+            }),
             meta: {
                 total,
                 page,
