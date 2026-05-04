@@ -126,15 +126,29 @@ export class CategoryService {
             where,
             include: {
                 children: true,
+                genderImages: true,
+                _count: {
+                    select: { products: true },
+                },
             },
             orderBy: {
                 displayOrder: "asc",
             },
         });
 
+        const data = categories.map((cat: any) => ({
+            ...cat,
+            imageUrl: cat.genderImages?.[0]?.imageUrl || cat.imageUrl,
+            totalProducts: cat._count?.products || 0,
+            children: (cat.children || []).map((child: any) => ({
+                ...child,
+                // Optional: add more mapping for children if needed
+            })),
+        }));
+
         return {
             success: true,
-            data: categories,
+            data,
         };
     }
 
@@ -439,15 +453,19 @@ export class CategoryService {
         ]);
 
         const data = rootCategories.map((cat: any) => {
-            const { _count, children, ...rest } = cat;
+            const children = cat.children || [];
+            const productsCount = (cat._count as { products: number })?.products ?? 0;
+
             return {
-                ...rest,
-                totalProducts: (_count as { products: number }).products,
-                children: (children as any[]).map((child: any) => {
-                    const { _count: childCount, ...childRest } = child;
+                ...cat,
+                imageUrl: cat.genderImages?.[0]?.imageUrl || cat.imageUrl,
+                totalProducts: productsCount,
+                children: children.map((child: any) => {
+                    const childProductsCount = (child._count as { products: number })?.products ?? 0;
                     return {
-                        ...childRest,
-                        totalProducts: (childCount as { products: number }).products,
+                        ...child,
+                        imageUrl: child.genderImages?.[0]?.imageUrl || child.imageUrl,
+                        totalProducts: childProductsCount,
                     };
                 }),
             };
