@@ -59,6 +59,17 @@ async function bootstrap(): Promise<void> {
         }
     }
 
+    // Storage bucket check
+    try {
+        const { StorageService } = await import("./core/services/storage.service.js");
+        const storage = new StorageService();
+        await storage.ensureBucketExists();
+    } catch (error) {
+        logger.error("Failed to initialize storage bucket:", {
+            error: error instanceof Error ? error.message : String(error),
+        });
+    }
+
     // App
     const app = new App({
         port: config.port,
