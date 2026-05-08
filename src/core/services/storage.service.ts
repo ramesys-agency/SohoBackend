@@ -24,7 +24,8 @@ export class StorageService implements IStorageService {
         this.logger = new LoggerService();
         this.bucketName = config.storage.bucket;
 
-        const s3Config: any = {
+        // Base credentials shared by both clients
+        const baseCredentials = {
             region: config.storage.region,
             credentials: {
                 accessKeyId: config.storage.accessKey,
@@ -32,20 +33,26 @@ export class StorageService implements IStorageService {
             },
         };
 
-        // Automatic switch to MinIO if type is set
+        // Main client: always uses the INTERNAL endpoint (fast, within Docker network).
+        // Used for all actual operations: upload, delete, bucket check.
         if (config.storage.type === "minio") {
-            s3Config.endpoint = config.storage.endpoint;
-            s3Config.forcePathStyle = true;
+            this.client = new S3Client({
+                ...baseCredentials,
+                endpoint: config.storage.endpoint!, // internal: http://minio:9000
+                forcePathStyle: true,
+            });
+        } else {
+            this.client = new S3Client(baseCredentials);
         }
 
-        this.client = new S3Client(s3Config);
-        
-        // If a public endpoint is provided (e.g. for MinIO in Docker), 
-        // create a separate client for generating signed URLs.
+        // Signing client: used ONLY for generating pre-signed URLs for clients.
+        // If STORAGE_PUBLIC_ENDPOINT is set, the signed URL host will be the public domain.
+        // This does NOT affect upload/delete performance — it's never used for those.
         if (config.storage.type === "minio" && config.storage.publicEndpoint) {
             this.signingClient = new S3Client({
-                ...s3Config,
-                endpoint: config.storage.publicEndpoint,
+                ...baseCredentials,
+                endpoint: config.storage.publicEndpoint, // public: https://minio.soho-bd.com
+                forcePathStyle: true,
             });
         } else {
             this.signingClient = this.client;
