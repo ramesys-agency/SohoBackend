@@ -1,8 +1,10 @@
 import { PrismaService } from "../../core/services/index.js";
 import { PageType, SectionType } from "@prisma/client";
+import { prisma } from "../../config/prisma.js";
+
 
 export class AppPlacementService {
-    private prisma = new PrismaService();
+    private prisma = prisma;
 
     async createPlacement(data: {
         collectionId: string;

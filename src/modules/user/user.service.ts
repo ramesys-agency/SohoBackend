@@ -1,7 +1,9 @@
 import { PrismaService } from "../../core/services/index.js";
+import { prisma } from "../../config/prisma.js";
+
 
 export class UserService {
-    private prisma: PrismaService = new PrismaService();
+    private prisma: PrismaService = prisma;
     async updateProfile(
         userId: string,
         data: {

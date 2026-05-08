@@ -1,7 +1,9 @@
 import { PrismaService } from "../../core/services/prisma.service.js";
+import { prisma } from "../../config/prisma.js";
+
 
 export class CartService {
-    private prisma: PrismaService = new PrismaService();
+    private prisma: PrismaService = prisma;
 
     async addItem(userId: string, variantId: string) {
         // Check if item already exists

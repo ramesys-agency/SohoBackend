@@ -3,14 +3,16 @@ model User {
     email        String   @unique
     fullName     String
     phone        String?
-    passwordHash String
-    role         UserRole @default(customer)
-    avatar       String?
-    age          Int?
-    gender       String?
-    region       String?
-    isVerified   Boolean  @default(false)
-    isDeleted    Boolean  @default(false)
+    passwordHash   String?
+    authProvider   String   @default("local") // local, google
+    authProviderId String?  @unique
+    role           UserRole @default(customer)
+    avatar         String?
+    age            Int?
+    gender         String?
+    region         String?
+    isVerified     Boolean  @default(false)
+    isDeleted      Boolean  @default(false)
 
     addresses           Address[]
     orders              Order[]

@@ -1,10 +1,12 @@
 import type { NextFunction, Request, Response } from "express";
 import { AppPlacementService } from "./app-placement.service.js";
 import { PageType, SectionType } from "@prisma/client";
-import { getDummyUrl } from "../upload/upload.helper.js";
+import { StorageService } from "../../core/services/storage.service.js";
+import { randomBytes } from "crypto";
 
 export class AppPlacementController {
     private appPlacementService = new AppPlacementService();
+    private storageService = new StorageService();
 
     createPlacement = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
         try {
@@ -20,12 +22,16 @@ export class AppPlacementController {
             let imageUrl = data.image;
 
             if (req.file) {
-                const generatedUrl = getDummyUrl(req.file);
-                if (!generatedUrl) {
-                    res.status(400).json({ message: "Invalid file type. Only images and videos are allowed for placement." });
-                    return;
-                }
-                imageUrl = generatedUrl;
+                const fileExt = req.file.originalname.split(".").pop();
+                const randomId = randomBytes(4).toString("hex");
+                const folder = `placements/collection-${data.collectionId || "new"}`;
+                const key = `${folder}/${data.page}_${randomId}.${fileExt}`;
+                
+                imageUrl = await this.storageService.uploadFile(
+                    req.file.buffer,
+                    key,
+                    req.file.mimetype
+                );
             }
 
             const isBanner = data.isBanner === "true" || data.isBanner === true;
@@ -61,12 +67,16 @@ export class AppPlacementController {
             let imageUrl = data.image;
 
             if (req.file) {
-                const generatedUrl = getDummyUrl(req.file);
-                if (!generatedUrl) {
-                    res.status(400).json({ message: "Invalid file type. Only images and videos are allowed for placement." });
-                    return;
-                }
-                imageUrl = generatedUrl;
+                const fileExt = req.file.originalname.split(".").pop();
+                const randomId = randomBytes(4).toString("hex");
+                const folder = `placements/update-${id}`;
+                const key = `${data.page || "placement"}_${randomId}.${fileExt}`;
+                
+                imageUrl = await this.storageService.uploadFile(
+                    req.file.buffer,
+                    `${folder}/${key}`,
+                    req.file.mimetype
+                );
             }
 
             const updatePayload: any = {

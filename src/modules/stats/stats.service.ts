@@ -1,8 +1,10 @@
 import { PrismaService } from "../../core/services/prisma.service.js";
 import { logger } from "../../config/logger.js";
+import { prisma } from "../../config/prisma.js";
+
 
 export class StatsService {
-    private prisma = new PrismaService();
+    private prisma = prisma;
 
     async getDashboardStats() {
         try {

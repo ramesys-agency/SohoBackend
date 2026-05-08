@@ -1,11 +1,11 @@
 import type { Request, Response, NextFunction } from "express";
 import { LocationService } from "./location.service.js";
 import { RoadRushService } from "./roadrush.service.js";
-import { PrismaService } from "../../core/services/index.js";
+import { prisma as prismaService } from "../../config/prisma.js";
 
 const locationService = new LocationService();
 const roadRushService = new RoadRushService();
-const prisma = new PrismaService().getClient();
+const prisma = prismaService.getClient();
 
 /**
  * Logistics Controller

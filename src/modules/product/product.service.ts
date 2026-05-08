@@ -1,3 +1,4 @@
+import { prisma } from "../../config/prisma.js";
 import type {
     GetProductsQueryDto,
     GetProductsResponseDto,
@@ -20,7 +21,7 @@ import {
 } from "./helpers/get-all-products.js";
 
 export class ProductService implements IProductService {
-    private prisma: PrismaService = new PrismaService();
+    private prisma: PrismaService = prisma;
 
     async createProduct(data: CreateProductDto): Promise<any> {
         return await this.prisma.getClient().$transaction(async (tx) => {

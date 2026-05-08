@@ -39,6 +39,8 @@ export const config = {
         cacheTtl: env.AUTH_CACHE_TTL,
         accessToken: env.AUTH_ACCESS_TOKEN,
         refreshToken: env.AUTH_REFRESH_TOKEN,
+        googleClientId: env.GOOGLE_CLIENT_ID,
+        appleClientId: env.APPLE_CLIENT_ID,
     },
 
     redis: {

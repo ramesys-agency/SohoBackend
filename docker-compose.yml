@@ -17,6 +17,8 @@ services:
             - REDIS_PORT=6379
             - REDIS_PASSWORD=${REDIS_PASSWORD:-}
             - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
+            - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+            - APPLE_CLIENT_ID=${APPLE_CLIENT_ID}
             - STORAGE=${STORAGE:-minio}
             - BUCKET_NAME=${BUCKET_NAME}
             - ACCESS_KEY=${ACCESS_KEY}

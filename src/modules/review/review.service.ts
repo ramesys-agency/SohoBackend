@@ -1,11 +1,14 @@
+import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../core/services/index.js";
 import type { AddReviewDto, UpdateReviewDto } from "./review.types.js";
+import { prisma } from "../../config/prisma.js";
+
 
 export class ReviewService {
     private prisma: PrismaService;
 
     constructor() {
-        this.prisma = new PrismaService();
+        this.prisma = prisma;
     }
 
     async getReviews(productId: string, stars?: number) {
@@ -51,21 +54,28 @@ export class ReviewService {
             throw new Error("Product not found");
         }
 
-        const review = await this.prisma.getClient().review.create({
-            data: {
-                userId,
-                productId,
-                rating: data.rating,
-                ...(data.comment !== undefined && { comment: data.comment }),
-                ...(data.images !== undefined && { images: data.images }),
-                ...(data.videos !== undefined && { videos: data.videos }),
-            },
-        });
+        try {
+            const review = await this.prisma.getClient().review.create({
+                data: {
+                    userId,
+                    productId,
+                    rating: data.rating,
+                    ...(data.comment !== undefined && { comment: data.comment }),
+                    ...(data.images !== undefined && { images: data.images }),
+                    ...(data.videos !== undefined && { videos: data.videos }),
+                },
+            });
 
-        // Update product stats
-        await this.updateProductStats(productId);
+            // Update product stats
+            await this.updateProductStats(productId);
 
-        return review;
+            return review;
+        } catch (error: any) {
+            if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+                throw new Error("You have already reviewed this product.");
+            }
+            throw error;
+        }
     }
 
     async updateReview(userId: string, reviewId: string, productId: string, data: UpdateReviewDto) {

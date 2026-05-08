@@ -1,8 +1,10 @@
 import { PrismaService } from "../../core/services/index.js";
 import { NotFoundError, BadRequestError } from "../../core/errors/http-errors.js";
+import { prisma } from "../../config/prisma.js";
+
 
 export class CouponService {
-    private prisma: PrismaService = new PrismaService();
+    private prisma: PrismaService = prisma;
 
     async createCoupon(data: any) {
         return await this.prisma.getClient().coupon.create({

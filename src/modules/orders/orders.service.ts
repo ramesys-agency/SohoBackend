@@ -4,9 +4,11 @@ import { RoadRushService } from "../logistics/roadrush.service.js";
 import { CouponService } from "../coupon/coupon.service.js";
 import { logger } from "../../config/logger.js";
 import { OrderStatus } from "@prisma/client";
+import { prisma } from "../../config/prisma.js";
+
 
 export class OrderService {
-    private prisma: PrismaService = new PrismaService();
+    private prisma: PrismaService = prisma;
     private roadRush: RoadRushService = new RoadRushService();
     private couponService: CouponService = new CouponService();
 

@@ -38,7 +38,23 @@ export const ResetPasswordSchema = z.object({
     }),
 });
 
-export type SignupInput = z.infer<typeof SignupSchemaStrict>["body"];
+export const GoogleAuthSchema = z.object({
+    body: z.object({
+        idToken: z.string().min(1, "ID token is required"),
+    }),
+});
+
+export const AppleAuthSchema = z.object({
+    body: z.object({
+        identityToken: z.string().min(1, "Identity token is required"),
+        firstName: z.string().optional(),
+        lastName: z.string().optional(),
+    }),
+});
+
+export type SignupInput = z.infer<typeof SignupSchema>["body"];
 export type LoginInput = z.infer<typeof LoginSchema>["body"];
 export type ForgotPasswordInput = z.infer<typeof ForgotPasswordSchema>["body"];
 export type ResetPasswordInput = z.infer<typeof ResetPasswordSchema>["body"];
+export type GoogleAuthInput = z.infer<typeof GoogleAuthSchema>["body"];
+export type AppleAuthInput = z.infer<typeof AppleAuthSchema>["body"];

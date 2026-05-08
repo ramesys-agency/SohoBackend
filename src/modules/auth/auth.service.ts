@@ -1,14 +1,20 @@
+import { prisma } from "../../config/prisma.js";
 import type { PrismaClient } from "@prisma/client";
-import { PrismaService } from "../../core/services/prisma.service.js";
 import { AuthUtils } from "./auth.utils.js";
 import { config } from "../../config/index.js";
 import { ConflictError, UnauthorizedError, BadRequestError } from "../../core/errors/index.js";
+import { OAuth2Client } from "google-auth-library";
+import appleSignin from "apple-signin-auth";
 import type {
     SignupInput,
     LoginInput,
     ForgotPasswordInput,
     ResetPasswordInput,
+    GoogleAuthInput,
+    AppleAuthInput,
 } from "./auth.schema.js";
+
+const googleClient = new OAuth2Client();
 
 export class AuthService {
     private prisma: PrismaClient;
@@ -23,13 +29,13 @@ export class AuthService {
         // `src/app.ts` instantiates services? No, it uses `setupMiddleware`.
         // Let's look at `src/modules/health/health.service.ts` if it exists.
         // Assuming we instantiate PrismaService explicitly for now.
-        const prismaService = new PrismaService();
+
         // Since PrismaService connects on demand or we rely on the global pool?
         // actually PrismaService creates a new client.
         // Ideally we should share the client.
         // But for now, let's just use it as is, or better, import a singleton if available.
         // `src/config/index.js` ??
-        this.prisma = prismaService.getClient();
+        this.prisma = prisma.getClient();
     }
 
     // Better approach: Pass prisma client in constructor if possible, but for module simplicity:
@@ -59,7 +65,7 @@ export class AuthService {
                 email,
                 passwordHash,
                 fullName,
-                phone,
+                phone: phone ?? null,
                 role: "customer", // Default role
             },
         });
@@ -94,7 +100,7 @@ export class AuthService {
             where: { email },
         });
 
-        if (!user) {
+        if (!user || !user.passwordHash) {
             throw new UnauthorizedError("Invalid email or password");
         }
 
@@ -125,6 +131,162 @@ export class AuthService {
             accessToken,
             refreshToken,
         };
+    }
+
+    async googleAuth(input: GoogleAuthInput) {
+        const { idToken } = input;
+
+        try {
+            // Verify the token with the audience if configured.
+            const verifyOptions: any = { idToken };
+            if (config.auth.googleClientId) {
+                verifyOptions.audience = config.auth.googleClientId;
+            }
+
+            const ticket = await googleClient.verifyIdToken(verifyOptions);
+            const payload = ticket.getPayload();
+
+            if (!payload || !payload.email) {
+                throw new UnauthorizedError("Invalid Google token");
+            }
+
+            const { email, sub: providerId, name, picture } = payload;
+
+            let user = await this.prisma.user.findUnique({
+                where: { email },
+            });
+
+            if (!user) {
+                // User doesn't exist, create a new one
+                user = await this.prisma.user.create({
+                    data: {
+                        email,
+                        fullName: name || "Google User",
+                        avatar: picture ?? null,
+                        authProvider: "google",
+                        authProviderId: providerId,
+                        role: "customer",
+                        isVerified: true, // Google emails are verified
+                    },
+                });
+            } else if (!user.authProviderId) {
+                // User exists but hasn't linked Google yet, link it
+                user = await this.prisma.user.update({
+                    where: { email },
+                    data: {
+                        authProvider: "google",
+                        authProviderId: providerId,
+                        isVerified: true,
+                    },
+                });
+            }
+
+            const accessToken = AuthUtils.generateAccessToken(
+                { userId: user.id, role: user.role },
+                config.auth.jwtSecret
+            );
+
+            const refreshToken = AuthUtils.generateRefreshToken(
+                { userId: user.id, role: user.role },
+                config.auth.jwtSecret
+            );
+
+            return {
+                user: {
+                    id: user.id,
+                    email: user.email,
+                    fullName: user.fullName,
+                    role: user.role,
+                    avatar: user.avatar,
+                },
+                accessToken,
+                refreshToken,
+            };
+        } catch (error) {
+            console.error("Google Auth Error:", error);
+            throw new UnauthorizedError("Invalid Google token");
+        }
+    }
+
+    async appleAuth(input: AppleAuthInput) {
+        const { identityToken, firstName, lastName } = input;
+
+        try {
+            const verifyOptions: any = {};
+            if (config.auth.appleClientId) {
+                verifyOptions.audience = config.auth.appleClientId;
+            }
+
+            const payload = await appleSignin.verifyIdToken(identityToken, verifyOptions);
+
+            if (!payload || !payload.email || !payload.sub) {
+                throw new UnauthorizedError("Invalid Apple token");
+            }
+
+            const { email, sub: providerId } = payload;
+
+            let user = await this.prisma.user.findUnique({
+                where: { email },
+            });
+
+            if (!user) {
+                // Determine full name
+                let fullName = "Apple User";
+                if (firstName && lastName) {
+                    fullName = `${firstName} ${lastName}`;
+                } else if (firstName) {
+                    fullName = firstName;
+                } else if (lastName) {
+                    fullName = lastName;
+                }
+
+                user = await this.prisma.user.create({
+                    data: {
+                        email,
+                        fullName,
+                        authProvider: "apple",
+                        authProviderId: providerId,
+                        role: "customer",
+                        isVerified: true, // Apple emails are verified
+                    },
+                });
+            } else if (!user.authProviderId) {
+                // User exists but hasn't linked Apple yet, link it
+                user = await this.prisma.user.update({
+                    where: { email },
+                    data: {
+                        authProvider: "apple",
+                        authProviderId: providerId,
+                        isVerified: true,
+                    },
+                });
+            }
+
+            const accessToken = AuthUtils.generateAccessToken(
+                { userId: user.id, role: user.role },
+                config.auth.jwtSecret
+            );
+
+            const refreshToken = AuthUtils.generateRefreshToken(
+                { userId: user.id, role: user.role },
+                config.auth.jwtSecret
+            );
+
+            return {
+                user: {
+                    id: user.id,
+                    email: user.email,
+                    fullName: user.fullName,
+                    role: user.role,
+                    avatar: user.avatar,
+                },
+                accessToken,
+                refreshToken,
+            };
+        } catch (error) {
+            console.error("Apple Auth Error:", error);
+            throw new UnauthorizedError("Invalid Apple token");
+        }
     }
 
     async refreshAccessToken(refreshToken: string) {
@@ -229,7 +391,7 @@ export class AuthService {
         const payload = {
             userId: user.id,
             role: user.role,
-            hash: user.passwordHash,
+            hash: user.passwordHash || "social_user",
         };
 
         const resetToken = AuthUtils.generatePasswordResetToken(payload, config.auth.jwtSecret);
@@ -261,7 +423,7 @@ export class AuthService {
 
             // Check if tax hash matches current user hash
             // This ensures single-use: once we change password, hash changes, old token invalid.
-            if (payload.hash !== user.passwordHash) {
+            if (payload.hash !== (user.passwordHash || "social_user")) {
                 throw new UnauthorizedError("Invalid or expired token");
             }
 

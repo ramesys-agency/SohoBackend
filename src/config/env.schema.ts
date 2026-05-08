@@ -32,6 +32,8 @@ const envSchema = z.object({
     AUTH_CACHE_TTL: z.coerce.number().default(300), // 5 minutes
     AUTH_ACCESS_TOKEN: z.string().default("access_token"),
     AUTH_REFRESH_TOKEN: z.string().default("refresh_token"),
+    GOOGLE_CLIENT_ID: z.string().optional(),
+    APPLE_CLIENT_ID: z.string().optional(),
 
     // Redis
     REDIS_ENABLED: z

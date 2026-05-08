@@ -1,5 +1,7 @@
 import { PrismaService } from "../../core/services/index.js";
 import { logger } from "../../config/logger.js";
+import { prisma } from "../../config/prisma.js";
+
 
 interface AddToWishlistDto {
     userId: string;
@@ -7,7 +9,7 @@ interface AddToWishlistDto {
 }
 
 export class WishlistService {
-    private prisma: PrismaService = new PrismaService();
+    private prisma: PrismaService = prisma;
 
     async toggleWishlistItem(
         data: AddToWishlistDto

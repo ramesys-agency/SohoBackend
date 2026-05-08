@@ -1,9 +1,11 @@
 import { PrismaService } from "../../core/services/index.js";
 import { GenderType, type Prisma } from "@prisma/client";
 import { NotFoundError } from "../../core/errors/http-errors.js";
+import { prisma } from "../../config/prisma.js";
+
 
 export class CategoryService {
-    private prisma = new PrismaService();
+    private prisma = prisma;
 
     async getAllCategories(query: {
         isActive?: string;
@@ -90,7 +92,7 @@ export class CategoryService {
                     genderImages: true, // Always include to allow robust fallbacks
                 },
                 orderBy: {
-                    displayOrder: "asc",
+                    name: "asc",
                 },
                 skip,
                 take: limit,
@@ -140,7 +142,7 @@ export class CategoryService {
                 },
             },
             orderBy: {
-                displayOrder: "asc",
+                name: "asc",
             },
         });
 
@@ -447,7 +449,7 @@ export class CategoryService {
 
         const childrenArgs = {
             include: childrenInclude,
-            orderBy: { displayOrder: "asc" as const },
+            orderBy: { name: "asc" as const },
             ...(Object.keys(childWhere).length ? { where: childWhere } : {}),
         };
 
@@ -461,7 +463,7 @@ export class CategoryService {
                     genderImages: true,
                     children: childrenArgs,
                 },
-                orderBy: { displayOrder: "asc" },
+                orderBy: { name: "asc" },
                 skip,
                 take: limit,
             }),

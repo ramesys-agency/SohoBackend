@@ -1,12 +1,14 @@
 import { PrismaService } from "../../core/services/index.js";
 import { RoadRushService } from "./roadrush.service.js";
 import { logger } from "../../config/logger.js";
+import { prisma } from "../../config/prisma.js";
+
 
 /**
  * Location Service for managing local hierarchical location data
  */
 export class LocationService {
-    private prisma: PrismaService = new PrismaService();
+    private prisma: PrismaService = prisma;
     private roadRush: RoadRushService = new RoadRushService();
 
     // --- Local DB Getters ---

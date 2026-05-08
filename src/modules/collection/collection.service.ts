@@ -1,8 +1,10 @@
 import { PrismaService } from "../../core/services/index.js";
 import { GenderType, Prisma, PageType, SectionType } from "@prisma/client";
+import { prisma } from "../../config/prisma.js";
+
 
 export class CollectionService {
-    private prisma = new PrismaService();
+    private prisma = prisma;
 
     async getAllCollections(query: {
         isActive?: string;

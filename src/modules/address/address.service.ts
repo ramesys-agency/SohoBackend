@@ -1,8 +1,10 @@
 import { PrismaService } from "../../core/services/index.js";
 import type { CreateAddressInput, UpdateAddressInput } from "./address.type.js";
+import { prisma } from "../../config/prisma.js";
+
 
 export class AddressService {
-    private prisma: PrismaService = new PrismaService();
+    private prisma: PrismaService = prisma;
 
     async getAddresses(userId: string) {
         return await this.prisma.getClient().address.findMany({

@@ -12,4 +12,6 @@ model Review {
     videos  String[]
 
     createdAt DateTime @default(now())
+
+    @@unique([productId, userId])
 }

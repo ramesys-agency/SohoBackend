@@ -50,6 +50,52 @@ export class AuthController {
         }
     };
 
+    googleLogin = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { idToken } = req.body;
+            if (!idToken) {
+                res.status(400).json({ message: "idToken is required" });
+                return;
+            }
+
+            const result = await this.authService.googleAuth({ idToken });
+
+            res.status(200).json({
+                message: "Google Authentication successful",
+                data: {
+                    user: result.user,
+                    accessToken: result.accessToken,
+                    refreshToken: result.refreshToken,
+                },
+            });
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    appleLogin = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { identityToken, firstName, lastName } = req.body;
+            if (!identityToken) {
+                res.status(400).json({ message: "identityToken is required" });
+                return;
+            }
+
+            const result = await this.authService.appleAuth({ identityToken, firstName, lastName });
+
+            res.status(200).json({
+                message: "Apple Authentication successful",
+                data: {
+                    user: result.user,
+                    accessToken: result.accessToken,
+                    refreshToken: result.refreshToken,
+                },
+            });
+        } catch (error) {
+            next(error);
+        }
+    };
+
     refresh = async (req: Request, res: Response, next: NextFunction) => {
         try {
             const refreshToken = req.body.refreshToken;
