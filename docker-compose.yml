@@ -97,6 +97,10 @@ services:
         networks:
             - internal
             - external
+        labels:
+            # Force Traefik to route minio.soho-bd.com to port 9000 (S3 API),
+            # NOT port 9001 (MinIO Console UI).
+            - "traefik.http.services.minio-s3.loadbalancer.server.port=9000"
 
 networks:
     internal:
