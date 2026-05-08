@@ -23,6 +23,7 @@ services:
             - SECRET_KEY=${SECRET_KEY}
             - AWS_REGION=${AWS_REGION:-us-east-1}
             - ENDPOINT=${ENDPOINT}
+            - STORAGE_PUBLIC_ENDPOINT=${STORAGE_PUBLIC_ENDPOINT}
             - ROADRUSH_USERNAME=${ROADRUSH_USERNAME}
             - ROADRUSH_PASSWORD=${ROADRUSH_PASSWORD}
             - LICENSE_KEY=${LICENSE_KEY:?LICENSE_KEY is required}
@@ -97,16 +98,20 @@ services:
         networks:
             - internal
             - external
+            - coolify          # Must be on Coolify's proxy network so Traefik can reach it
         labels:
             # Force Traefik to route minio.soho-bd.com to port 9000 (S3 API),
             # NOT port 9001 (MinIO Console UI).
             - "traefik.http.services.minio-s3.loadbalancer.server.port=9000"
+            - "traefik.docker.network=coolify"
 
 networks:
     internal:
         driver: bridge
     external:
         driver: bridge
+    coolify:
+        external: true    # Coolify's Traefik proxy network — do NOT recreate it
 
 volumes:
     postgres-data:
