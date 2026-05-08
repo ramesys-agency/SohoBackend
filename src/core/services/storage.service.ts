@@ -16,6 +16,7 @@ import type { IStorageService } from "../interfaces/index.js";
  */
 export class StorageService implements IStorageService {
     private client: S3Client;
+    private signingClient: S3Client;
     private bucketName: string;
     private logger: LoggerService;
 
@@ -38,6 +39,17 @@ export class StorageService implements IStorageService {
         }
 
         this.client = new S3Client(s3Config);
+        
+        // If a public endpoint is provided (e.g. for MinIO in Docker), 
+        // create a separate client for generating signed URLs.
+        if (config.storage.type === "minio" && config.storage.publicEndpoint) {
+            this.signingClient = new S3Client({
+                ...s3Config,
+                endpoint: config.storage.publicEndpoint,
+            });
+        } else {
+            this.signingClient = this.client;
+        }
     }
 
     /**
@@ -86,8 +98,8 @@ export class StorageService implements IStorageService {
      */
     getFileUrl(key: string): string {
         if (config.storage.type === "minio") {
-            // For MinIO, use the custom endpoint
-            const endpoint = config.storage.endpoint?.replace(/\/$/, "");
+            // Use publicEndpoint if available, otherwise fallback to internal endpoint
+            const endpoint = (config.storage.publicEndpoint || config.storage.endpoint)?.replace(/\/$/, "");
             return `${endpoint}/${this.bucketName}/${key}`;
         }
         // For standard S3
@@ -123,7 +135,7 @@ export class StorageService implements IStorageService {
         });
 
         try {
-            return await getSignedUrl(this.client, command, { expiresIn: expiresAlt });
+            return await getSignedUrl(this.signingClient, command, { expiresIn: expiresAlt });
         } catch (error: any) {
             this.logger.error(`Error generating signed upload URL for "${key}":`, error);
             throw error;

@@ -59,6 +59,20 @@ async function bootstrap(): Promise<void> {
         }
     }
 
+    // Storage
+    try {
+        const { StorageService } = await import("./core/services/storage.service.js");
+        const storageService = new StorageService();
+        await storageService.ensureBucketExists();
+        logger.info("Storage bucket verified/created");
+    } catch (error) {
+        logger.error("Failed to initialize storage:", {
+            error: error instanceof Error ? error.message : String(error),
+        });
+        // We don't necessarily want to crash the whole app if storage is down, 
+        // but it's a critical service. For now, just log the error.
+    }
+
     // App
     const app = new App({
         port: config.port,

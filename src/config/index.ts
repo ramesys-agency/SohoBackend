@@ -24,9 +24,6 @@ export const config = {
 
     logging: {
         level: env.LOG_LEVEL,
-        lokiUrl: env.LOKI_URL || "http://localhost:3100",
-        lokiEnabled: env.LOKI_ENABLED,
-        lokiTimeoutMs: 5000,
         appName: env.APP_NAME,
     },
 
@@ -63,6 +60,7 @@ export const config = {
         secretKey: env.SECRET_KEY,
         region: env.AWS_REGION,
         endpoint: env.ENDPOINT,
+        publicEndpoint: env.STORAGE_PUBLIC_ENDPOINT,
     },
     
     logistics: {

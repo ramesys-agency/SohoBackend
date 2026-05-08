@@ -7,8 +7,6 @@ services:
             - NODE_ENV=production
             - PORT=3000
             - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-ugp_bos}?schema=public
-            - LOKI_URL=http://loki:3100
-            - LOKI_ENABLED=true
             - LOG_LEVEL=info
             - APP_NAME=ugp-bos
             - CORS_ORIGIN=${CORS_ORIGIN:-*}
@@ -36,8 +34,6 @@ services:
                 condition: service_healthy
             redis:
                 condition: service_healthy
-            loki:
-                condition: service_started
             minio:
                 condition: service_started
         restart: unless-stopped
@@ -86,44 +82,6 @@ services:
         networks:
             - internal
 
-    loki:
-        image: grafana/loki:2.9.0
-        # Only expose loki port in development; remove or comment out for production
-        ports:
-          - "3100:3100"
-        volumes:
-            - loki-data:/loki
-        command: -config.file=/etc/loki/local-config.yaml
-        restart: unless-stopped
-        networks:
-            - internal
-
-    grafana:
-        image: grafana/grafana:10.2.0
-        ports:
-            - "3001:3000"
-        environment:
-            - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:?GRAFANA_ADMIN_USER is required}
-            - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
-            - GF_USERS_ALLOW_SIGN_UP=false
-        volumes:
-            - grafana-data:/var/lib/grafana
-            - ./grafana/provisioning:/etc/grafana/provisioning
-        depends_on:
-            - loki
-        restart: unless-stopped
-        networks:
-            - internal
-            - external
-
-    adminer:
-        image: adminer:latest
-        restart: unless-stopped
-        ports:
-            - "8080:8080"
-        networks:
-            - internal
-
     minio:
         image: minio/minio:latest
         ports:
@@ -149,6 +107,4 @@ networks:
 volumes:
     postgres-data:
     redis-data:
-    loki-data:
-    grafana-data:
     minio-data:

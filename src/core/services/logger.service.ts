@@ -1,5 +1,4 @@
 import winston from "winston";
-import LokiTransport from "winston-loki";
 import { config } from "../../config/index.js";
 import type { ILoggerService } from "../interfaces/index.js";
 
@@ -28,20 +27,6 @@ export class LoggerService implements ILoggerService {
                 ),
             }),
         ];
-
-        if (config.logging.lokiEnabled) {
-            transports.push(
-                new LokiTransport({
-                    host: config.logging.lokiUrl,
-                    labels: { app: config.logging.appName, env: config.env },
-                    json: true,
-                    replaceTimestamp: true,
-                    onConnectionError: (err) => {
-                        console.error("Loki connection error:", err);
-                    },
-                })
-            );
-        }
 
         this.logger = winston.createLogger({
             level: config.logging.level,

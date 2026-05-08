@@ -14,11 +14,6 @@ const envSchema = z.object({
 
     // Logging
     LOG_LEVEL: z.enum(["error", "warn", "info", "http", "debug"]).default("info"),
-    LOKI_URL: z.string().url().optional(),
-    LOKI_ENABLED: z
-        .string()
-        .default("false")
-        .transform((v) => v === "true"),
     APP_NAME: z.string().default("ugp-bos"),
 
     // Security
@@ -68,6 +63,7 @@ const envSchema = z.object({
     SECRET_KEY: z.string(),
     AWS_REGION: z.string().default("us-east-1"),
     ENDPOINT: z.string().url().optional(),
+    STORAGE_PUBLIC_ENDPOINT: z.string().url().optional(),
     
     // Logistics
     ROADRUSH_BASE_URL: z.string().url().default("https://www.roadrush.xyz/api/customer"),
