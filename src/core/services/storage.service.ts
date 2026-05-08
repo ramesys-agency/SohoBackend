@@ -4,6 +4,7 @@ import {
     DeleteObjectCommand,
     HeadBucketCommand,
     CreateBucketCommand,
+    PutBucketPolicyCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { config } from "../../config/index.js";
@@ -60,11 +61,45 @@ export class StorageService implements IStorageService {
     }
 
     /**
-     * Checks if the bucket exists and creates it if it doesn't (useful for MinIO dev).
+     * Builds a public-read bucket policy that allows anonymous GET on all objects.
+     */
+    private getPublicReadPolicy(): string {
+        return JSON.stringify({
+            Version: "2012-10-17",
+            Statement: [
+                {
+                    Sid: "PublicReadGetObject",
+                    Effect: "Allow",
+                    Principal: "*",
+                    Action: "s3:GetObject",
+                    Resource: `arn:aws:s3:::${this.bucketName}/*`,
+                },
+            ],
+        });
+    }
+
+    /**
+     * Applies the public-read policy to the bucket.
+     * Safe to call on an already-public bucket — it's idempotent.
+     */
+    private async applyPublicReadPolicy(): Promise<void> {
+        await this.client.send(
+            new PutBucketPolicyCommand({
+                Bucket: this.bucketName,
+                Policy: this.getPublicReadPolicy(),
+            })
+        );
+        this.logger.info(`Public-read policy applied to bucket "${this.bucketName}"`);
+    }
+
+    /**
+     * Checks if the bucket exists and creates it if it doesn't.
+     * Always applies a public-read policy so objects are directly accessible.
      */
     async ensureBucketExists(): Promise<void> {
         try {
             await this.client.send(new HeadBucketCommand({ Bucket: this.bucketName }));
+            this.logger.info(`Bucket "${this.bucketName}" already exists.`);
         } catch (error: any) {
             // S3 v3 NotFound error handling
             if (error.name === "NotFound" || error.$metadata?.httpStatusCode === 404) {
@@ -76,6 +111,9 @@ export class StorageService implements IStorageService {
                 throw error;
             }
         }
+
+        // Always enforce public-read policy (idempotent — safe on every startup)
+        await this.applyPublicReadPolicy();
     }
 
     /**
