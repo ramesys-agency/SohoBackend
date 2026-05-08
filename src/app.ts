@@ -21,6 +21,7 @@ export class App {
 
     constructor(config: AppConfig) {
         this.app = express();
+        this.app.set("trust proxy", true);
         this.config = config;
 
         setupMiddleware(this.app, {
