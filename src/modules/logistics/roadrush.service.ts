@@ -23,14 +23,18 @@ export class RoadRushService {
     private async getToken(): Promise<string> {
         const cacheKey = "logistics:roadrush:token";
 
-        // Try to get token from cache
-        try {
-            const cachedToken = await redis.get<string>(cacheKey);
-            if (cachedToken) {
-                return cachedToken;
+        // Try to get token from cache if enabled
+        if (config.redis.enabled) {
+            try {
+                const cachedToken = await redis.get<string>(cacheKey);
+                if (cachedToken) {
+                    return cachedToken;
+                }
+            } catch (error) {
+                logger.warn("Failed to get RoadRush token from redis", { 
+                    error: error instanceof Error ? error.message : String(error) 
+                });
             }
-        } catch (error) {
-            logger.warn("Failed to get RoadRush token from redis", { error });
         }
 
         if (!this.username || !this.password) {
@@ -59,11 +63,15 @@ export class RoadRushService {
         const data = (await response.json()) as { access: string };
         const token = data.access;
 
-        // Cache token for 1 hour
-        try {
-            await redis.set(cacheKey, token, { ttl: 3600 });
-        } catch (error) {
-            logger.warn("Failed to cache RoadRush token", { error });
+        // Cache token if enabled
+        if (config.redis.enabled) {
+            try {
+                await redis.set(cacheKey, token, { ttl: 3600 });
+            } catch (error) {
+                logger.warn("Failed to cache RoadRush token", { 
+                    error: error instanceof Error ? error.message : String(error) 
+                });
+            }
         }
 
         return token;

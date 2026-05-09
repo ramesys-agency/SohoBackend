@@ -28,7 +28,8 @@
         "docker:build": "docker compose build",
         "docker:up": "docker compose up -d",
         "docker:down": "docker compose down",
-        "db:sync-locations": "tsx src/scripts/sync-locations.ts"
+        "db:sync-locations": "tsx src/scripts/sync-locations.ts",
+        "db:sync-locations:prod": "node dist/scripts/sync-locations.js"
     },
     "prisma": {
         "seed": "tsx prisma/seed.ts"
