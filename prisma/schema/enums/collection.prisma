@@ -13,4 +13,5 @@ enum SectionType {
     FEATURED_ROW
     GRID_SECTION
     SEE_ALL
+    HERO
 }

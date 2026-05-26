@@ -52,9 +52,25 @@ export const AppleAuthSchema = z.object({
     }),
 });
 
+export const SendOtpSchema = z.object({
+    body: z.object({
+        email: z.string().email("Invalid email address"),
+    }),
+});
+
+export const VerifyOtpSchema = z.object({
+    body: z.object({
+        email: z.string().email("Invalid email address"),
+        otp: z.string().length(6, "OTP must be exactly 6 digits"),
+    }),
+});
+
 export type SignupInput = z.infer<typeof SignupSchema>["body"];
 export type LoginInput = z.infer<typeof LoginSchema>["body"];
 export type ForgotPasswordInput = z.infer<typeof ForgotPasswordSchema>["body"];
 export type ResetPasswordInput = z.infer<typeof ResetPasswordSchema>["body"];
 export type GoogleAuthInput = z.infer<typeof GoogleAuthSchema>["body"];
 export type AppleAuthInput = z.infer<typeof AppleAuthSchema>["body"];
+export type SendOtpInput = z.infer<typeof SendOtpSchema>["body"];
+export type VerifyOtpInput = z.infer<typeof VerifyOtpSchema>["body"];
+

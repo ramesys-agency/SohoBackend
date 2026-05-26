@@ -7,5 +7,8 @@ const appPlacementController = new AppPlacementController();
 
 // Admin Routes
 appPlacementRoutes.post("/", upload.single("image"), appPlacementController.createPlacement);
+appPlacementRoutes.get("/:id", appPlacementController.getPlacement);
 appPlacementRoutes.put("/:id", upload.single("image"), appPlacementController.updatePlacement);
 appPlacementRoutes.delete("/:id", appPlacementController.deletePlacement);
+appPlacementRoutes.post("/:id/products", appPlacementController.addPlacementProducts);
+appPlacementRoutes.delete("/:id/products", appPlacementController.removePlacementProducts);

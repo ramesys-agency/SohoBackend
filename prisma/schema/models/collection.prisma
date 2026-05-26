@@ -10,6 +10,8 @@ model Collection {
     createdAt            DateTime              @default(now())
     collectionPlacements CollectionPlacement[]
     coupons              CouponCollection[]
+
+    homePromos           HomePromo[]
 }
 
 
@@ -43,5 +45,20 @@ model CollectionPlacement {
 
     createdAt DateTime @default(now())
 
+    products CollectionPlacementProduct[]
+
     @@index([page, section])
+}
+
+model CollectionPlacementProduct {
+    placementId  String
+    productId    String
+    displayOrder Int    @default(0)
+
+    placement CollectionPlacement @relation(fields: [placementId], references: [id], onDelete: Cascade)
+    product   Product             @relation(fields: [productId], references: [id])
+
+    createdAt DateTime @default(now())
+
+    @@id([placementId, productId])
 }

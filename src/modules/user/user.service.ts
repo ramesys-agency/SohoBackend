@@ -1,6 +1,7 @@
 import { PrismaService } from "../../core/services/index.js";
 import { prisma } from "../../config/prisma.js";
-
+// import { AuthUtils } from "../auth/auth.utils.js";
+import { ConflictError } from "../../core/errors/index.js";
 
 export class UserService {
     private prisma: PrismaService = prisma;
@@ -65,22 +66,50 @@ export class UserService {
         });
     }
 
-    async getAllUsers(params: { page?: number; limit?: number; search?: string } = {}) {
+    async getAllUsers(
+        params: {
+            page?: number;
+            limit?: number;
+            search?: string;
+            region?: string;
+            role?: string;
+            showDeleted?: string;
+        } = {}
+    ) {
         const page = params.page ?? 1;
         const limit = params.limit ?? 20;
         const skip = (page - 1) * limit;
 
-        const where = {
-            isDeleted: false,
-            ...(params.search
-                ? {
-                      OR: [
-                          { fullName: { contains: params.search, mode: "insensitive" as const } },
-                          { email: { contains: params.search, mode: "insensitive" as const } },
-                      ],
-                  }
-                : {}),
-        };
+        const where: any = {};
+
+        if (params.showDeleted === "all") {
+            // Display both active and deleted users
+        } else if (params.showDeleted === "only") {
+            where.isDeleted = true;
+        } else {
+            where.isDeleted = false;
+        }
+
+        if (params.role) {
+            if (params.role === "customer" || params.role === "admin") {
+                where.role = params.role;
+            }
+            // If "all", we don't apply a role filter.
+        } else {
+            // Default to customers only
+            where.role = "customer";
+        }
+
+        if (params.region && params.region !== "All Regions") {
+            where.region = { equals: params.region, mode: "insensitive" as const };
+        }
+
+        if (params.search) {
+            where.OR = [
+                { fullName: { contains: params.search, mode: "insensitive" as const } },
+                { email: { contains: params.search, mode: "insensitive" as const } },
+            ];
+        }
 
         const [users, total] = await Promise.all([
             this.prisma.getClient().user.findMany({
@@ -99,6 +128,7 @@ export class UserService {
                     role: true,
                     avatar: true,
                     isVerified: true,
+                    isDeleted: true,
                     createdAt: true,
                 },
             }),
@@ -122,6 +152,40 @@ export class UserService {
             data: {
                 isDeleted: true,
                 deletedAt: new Date(),
+            },
+        });
+    }
+
+    async createAdmin(data: {
+        email: string;
+        passwordHash: string;
+        fullName: string;
+        phone?: string;
+        region?: string;
+    }) {
+        const existingUser = await this.prisma.getClient().user.findUnique({
+            where: { email: data.email },
+        });
+
+        if (existingUser) {
+            throw new ConflictError("User with this email already exists");
+        }
+
+        return await this.prisma.getClient().user.create({
+            data: {
+                ...data,
+                role: "admin",
+                isVerified: true,
+            },
+            select: {
+                id: true,
+                email: true,
+                fullName: true,
+                phone: true,
+                region: true,
+                role: true,
+                avatar: true,
+                createdAt: true,
             },
         });
     }

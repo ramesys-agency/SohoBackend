@@ -75,6 +75,13 @@ const envSchema = z.object({
     // License
     LICENSE_KEY: z.string().optional(),
     LICENSE_SERVICE_URL: z.string().url().optional(),
+
+    // SMTP (Nodemailer)
+    SMTP_HOST: z.string().optional(),
+    SMTP_PORT: z.string().optional().transform((v) => v ? parseInt(v, 10) : 587),
+    SMTP_USER: z.string().optional(),
+    SMTP_PASS: z.string().optional(),
+    SMTP_FROM: z.string().optional().default("Soho <noreply@soho.com>"),
 });
 
 

@@ -5,7 +5,10 @@ import {
     LoginSchema,
     ForgotPasswordSchema,
     ResetPasswordSchema,
+    SendOtpSchema,
+    VerifyOtpSchema,
 } from "./auth.schema.js";
+
 
 export class AuthController {
     private authService: AuthService;
@@ -146,6 +149,26 @@ export class AuthController {
                     user: req.user,
                 },
             });
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    sendOtp = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const data = SendOtpSchema.parse(req).body;
+            const result = await this.authService.sendOtp(data);
+            res.status(200).json(result);
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    verifyOtp = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const data = VerifyOtpSchema.parse(req).body;
+            const result = await this.authService.verifyOtp(data);
+            res.status(200).json(result);
         } catch (error) {
             next(error);
         }

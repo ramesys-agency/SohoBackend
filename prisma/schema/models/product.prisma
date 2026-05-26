@@ -16,10 +16,13 @@ model Product {
     reviews    Review[]
     orderItems OrderItem[]
 
-    collections  ProductCollection[]
-    seo          ProductSEO?
-    priceHistory ProductPriceHistory[]
-    sizeCharts   SizeChart[]
+    collections       ProductCollection[]
+    placementProducts CollectionPlacementProduct[]
+    seo               ProductSEO?
+    priceHistory      ProductPriceHistory[]
+    sizeCharts        SizeChart[]
+
+    homePromos        HomePromo[]
 
     createdAt DateTime   @default(now())
     updatedAt DateTime   @updatedAt

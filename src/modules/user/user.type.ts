@@ -7,3 +7,12 @@ export const updateProfileSchema = z.object({
     age: z.number().int().positive().optional(),
     region: z.string().optional(),
 });
+
+export const createAdminSchema = z.object({
+    email: z.string().email(),
+    password: z.string().min(6),
+    fullName: z.string(),
+    phone: z.string().optional(),
+    region: z.string().optional(),
+});
+

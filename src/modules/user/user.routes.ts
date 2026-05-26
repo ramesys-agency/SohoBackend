@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { UserController } from "./user.controller.js";
-import { authMiddleware } from "../../core/middleware/auth.middleware.js";
+import { authMiddleware, adminMiddleware } from "../../core/middleware/auth.middleware.js";
 import { upload } from "../upload/upload.controller.js";
 
 export class UserRoutes {
@@ -14,6 +14,7 @@ export class UserRoutes {
         router.get("/profile", authMiddleware, controller.getProfile);
         router.delete("/account", authMiddleware, controller.deleteAccount);
         router.get("/admin/all", authMiddleware, controller.getAllUsers);
+        router.post("/admin/create", authMiddleware, adminMiddleware, controller.createAdmin);
         router.get("/:id", authMiddleware, controller.getUserById);
 
         return router;

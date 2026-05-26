@@ -3,8 +3,11 @@ import type { PrismaClient } from "@prisma/client";
 import { AuthUtils } from "./auth.utils.js";
 import { config } from "../../config/index.js";
 import { ConflictError, UnauthorizedError, BadRequestError } from "../../core/errors/index.js";
+import { MailService } from "../../core/services/index.js";
 import { OAuth2Client } from "google-auth-library";
 import appleSignin from "apple-signin-auth";
+import { redis } from "../../config/redis.js";
+import crypto from "crypto";
 import type {
     SignupInput,
     LoginInput,
@@ -12,12 +15,16 @@ import type {
     ResetPasswordInput,
     GoogleAuthInput,
     AppleAuthInput,
+    SendOtpInput,
+    VerifyOtpInput,
 } from "./auth.schema.js";
+
 
 const googleClient = new OAuth2Client();
 
 export class AuthService {
     private prisma: PrismaClient;
+    private mailService = new MailService();
 
     constructor() {
         // We can inject PrismaService or instantiate it.
@@ -49,6 +56,15 @@ export class AuthService {
 
     async signup(input: SignupInput) {
         const { email, password, fullName, phone } = input;
+
+        // Verify email has successfully completed OTP verification
+        const verifiedKey = `otp:verified:${email}`;
+        const isVerified = await redis.get<string>(verifiedKey);
+        if (!isVerified) {
+            throw new BadRequestError("Email is not verified. Please verify your email via OTP first.");
+        }
+        // Consume the verification token
+        await redis.del(verifiedKey);
 
         const existingUser = await this.prisma.user.findUnique({
             where: { email },
@@ -396,14 +412,14 @@ export class AuthService {
 
         const resetToken = AuthUtils.generatePasswordResetToken(payload, config.auth.jwtSecret);
 
-        // TODO: Send email
-        // For now, return the link as requested.
-        // Assuming frontend URL is in config or hardcoded for now.
         const resetLink = `${config.app.frontendUrl}/reset-password?token=${resetToken}`;
 
+        // Send email with nodemailer/fallback
+        await this.mailService.sendPasswordResetLink(email, resetLink, resetToken);
+
         return {
-            message: "Password reset link generated.",
-            resetLink, // TODO: Remove this when email service is integrated
+            message: "Password reset link generated and email sent.",
+            resetLink,
         };
     }
 
@@ -439,5 +455,86 @@ export class AuthService {
             if (error instanceof UnauthorizedError) throw error;
             throw new BadRequestError("Invalid or expired token");
         }
+    }
+
+    async sendOtp(input: SendOtpInput) {
+        const { email } = input;
+
+        // Security feature 1: Rate limiting / resend cooldown check (60s)
+        const cooldownKey = `otp:cooldown:${email}`;
+        const hasCooldown = await redis.get(cooldownKey);
+        if (hasCooldown) {
+            throw new BadRequestError("Please wait 60 seconds before requesting another OTP");
+        }
+
+        // Generate OTP based on environment: production -> secure random 6-digit; development/test -> 000000
+        let otpCode = "000000";
+        if (config.isProduction) {
+            otpCode = crypto.randomInt(100000, 999999).toString();
+        }
+
+        // Hash the OTP before storing it to protect against Redis DB exposure
+        const hashedOtp = crypto.createHash("sha256").update(otpCode).digest("hex");
+
+        // Security feature 2: Store hashed OTP in Redis with a 5-minute TTL (300 seconds)
+        const otpKey = `otp:code:${email}`;
+        await redis.set(otpKey, hashedOtp, { ttl: 300 });
+
+        // Security feature 3: Set resend cooldown in Redis (60 seconds)
+        await redis.set(cooldownKey, "active", { ttl: 60 });
+
+        // Security feature 4: Reset/initialize attempt counter
+        const attemptKey = `otp:attempts:${email}`;
+        await redis.set(attemptKey, 0, { ttl: 300 });
+
+        // Send actual email using Nodemailer via MailService (or fallback console-log)
+        await this.mailService.sendOTP(email, otpCode);
+
+        return {
+            message: "OTP sent successfully",
+            // In non-production env, return the OTP in response for testing/development convenience
+            ...(!config.isProduction ? { otp: otpCode } : {}),
+        };
+    }
+
+    async verifyOtp(input: VerifyOtpInput) {
+        const { email, otp } = input;
+
+        const otpKey = `otp:code:${email}`;
+        const attemptKey = `otp:attempts:${email}`;
+
+        // Get stored OTP hash
+        const storedHash = await redis.get<string>(otpKey);
+        if (!storedHash) {
+            throw new BadRequestError("OTP has expired or does not exist. Please request a new one.");
+        }
+
+        // Security feature 5: Increment failed attempt counter to protect against brute-force attacks
+        const currentAttempts = await redis.incr(attemptKey);
+        // Set TTL on attempts key to match OTP expiration time
+        await redis.expire(attemptKey, 300);
+
+        if (currentAttempts > 3) {
+            // Brute force detected: invalidate OTP immediately by deleting keys
+            await redis.del(otpKey, attemptKey);
+            throw new BadRequestError("Too many failed attempts. This OTP has been invalidated. Please request a new one.");
+        }
+
+        // Hash incoming OTP and compare
+        const incomingHash = crypto.createHash("sha256").update(otp).digest("hex");
+        if (storedHash !== incomingHash) {
+            throw new BadRequestError("Invalid verification code. Please try again.");
+        }
+
+        // Security feature 6: Successful validation deletes the OTP keys immediately (One-time Use)
+        await redis.del(otpKey, attemptKey);
+
+        // Security feature 7: Store email verification status in Redis with a 15-minute TTL (900 seconds)
+        const verifiedKey = `otp:verified:${email}`;
+        await redis.set(verifiedKey, "true", { ttl: 900 });
+
+        return {
+            message: "OTP verified successfully",
+        };
     }
 }

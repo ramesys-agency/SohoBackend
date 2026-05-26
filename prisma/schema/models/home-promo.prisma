@@ -1,0 +1,19 @@
+model HomePromo {
+    id String @id @default(uuid())
+
+    title       String
+    description String
+    contentType String // "PRODUCT" or "COLLECTION"
+
+    productId String?
+    product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+    collectionId String?
+    collection   Collection? @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+
+    imageUrl String?
+    isActive Boolean @default(true)
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+}

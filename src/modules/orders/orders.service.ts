@@ -68,18 +68,34 @@ export class OrderService {
     }
 
     async createOrder(userId: string, data: any) {
-        // 1. Get Cart Items to compute total and details
-        const cartItems = await this.prisma.getClient().cartItem.findMany({
-            where: { userId },
-            include: {
-                variant: {
-                    include: { product: true },
-                },
-            },
-        });
+        // 1. Get order items — either from buyNow payload or the user's cart
+        let cartItems: any[];
 
-        if (cartItems.length === 0) {
-            throw new BadRequestError("Cannot place order with an empty cart");
+        if (data.buyNow?.variantId) {
+            const variant = await this.prisma.getClient().productVariant.findUnique({
+                where: { id: data.buyNow.variantId },
+                include: { product: true },
+            });
+            if (!variant) throw new BadRequestError("Product variant not found");
+            cartItems = [
+                {
+                    variantId: variant.id,
+                    quantity: data.buyNow.quantity || 1,
+                    variant,
+                },
+            ];
+        } else {
+            cartItems = await this.prisma.getClient().cartItem.findMany({
+                where: { userId },
+                include: {
+                    variant: {
+                        include: { product: true },
+                    },
+                },
+            });
+            if (cartItems.length === 0) {
+                throw new BadRequestError("Cannot place order with an empty cart");
+            }
         }
 
         // 2. Fetch Drop Address
@@ -127,7 +143,11 @@ export class OrderService {
 
         const totalAmount = subtotal - discountAmount;
         const customerFullName = address.user.fullName || data.customerFullName || "Not Provided";
-        const customerPhone = address.user.phone || data.customerPhone || "Not Provided";
+        const customerPhone = address.user.phone || data.customerPhone;
+
+        if (!customerPhone || customerPhone.trim() === "" || customerPhone === "Not Provided") {
+            throw new BadRequestError("Customer phone number is required to place an order");
+        }
 
         // 4. Create Order & Payment in a transaction
         const order = await this.prisma.getClient().$transaction(async (tx) => {
@@ -179,28 +199,31 @@ export class OrderService {
                 },
             });
 
-            // Clear the User's Cart
-            await tx.cartItem.deleteMany({ where: { userId } });
+            // Clear the User's Cart (skip for buy-now orders — cart is untouched)
+            if (!data.buyNow?.variantId) {
+                await tx.cartItem.deleteMany({ where: { userId } });
+            }
 
             return newOrder;
         });
 
-        // 5. External RoadRush Order Placement
-        try {
-            const rrResponse = await this.roadRush.placeOrder({
-                marcent_pickup_address_id: 17, // Hardcoded per user request
-                aggregator: data.aggregator || "pathao", // Default to pathao per user request
-                receiver_division: address.division,
-                receiver_district: address.district,
-                receiver_thana: address.thana,
-                drop_address: address.dropAddress || address.street,
-                customer_full_name: customerFullName,
-                customer_mobile_number: customerPhone,
-                item_value: totalAmount,
-                cod: data.paymentMethod === "COD",
-                item_details: itemDetails,
-            });
-
+        // 5. Fire-and-forget RoadRush sync — do NOT await so the client gets a
+        //    response immediately after the DB transaction. Cart is only cleared
+        //    inside the transaction above, so if the transaction failed the cart
+        //    is always preserved. The logistics sync happens in the background.
+        this.roadRush.placeOrder({
+            marcent_pickup_address_id: 17,
+            aggregator: data.aggregator || "pathao",
+            receiver_division: address.division,
+            receiver_district: address.district,
+            receiver_thana: address.thana,
+            drop_address: address.dropAddress || address.street,
+            customer_full_name: customerFullName,
+            customer_mobile_number: customerPhone,
+            item_value: totalAmount,
+            cod: data.paymentMethod === "COD",
+            item_details: itemDetails,
+        }).then(async (rrResponse) => {
             if (rrResponse.status === "success" && rrResponse.order_code) {
                 await this.prisma.getClient().order.update({
                     where: { id: order.id },
@@ -212,12 +235,12 @@ export class OrderService {
                     response: rrResponse,
                 });
             }
-        } catch (error) {
+        }).catch((error) => {
             logger.error("Failed to sync order with RoadRush logistics", {
                 orderId: order.id,
                 error: error instanceof Error ? error.message : String(error),
             });
-        }
+        });
 
         return order;
     }

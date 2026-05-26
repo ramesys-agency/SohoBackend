@@ -76,4 +76,57 @@ export class AppPlacementService {
 
         return { success: true, message: "Placement deleted successfully" };
     }
+
+    async getPlacementById(id: string) {
+        const placement = await this.prisma.getClient().collectionPlacement.findUnique({
+            where: { id },
+            include: {
+                collection: true,
+                products: {
+                    include: { product: true },
+                    orderBy: { displayOrder: "asc" },
+                },
+                _count: { select: { products: true } },
+            },
+        });
+
+        if (!placement) {
+            throw new Error("Placement not found");
+        }
+
+        return { success: true, data: placement };
+    }
+
+    async addProductsToPlacement(placementId: string, productIds: string[]) {
+        if (!productIds || !Array.isArray(productIds) || productIds.length === 0) {
+            throw new Error("Product IDs are required and must be an array");
+        }
+
+        const placement = await this.prisma.getClient().collectionPlacement.findUnique({ where: { id: placementId } });
+        if (!placement) {
+            throw new Error("Placement not found");
+        }
+
+        await this.prisma.getClient().collectionPlacementProduct.createMany({
+            data: productIds.map((productId) => ({ placementId, productId })),
+            skipDuplicates: true,
+        });
+
+        return { success: true, message: "Products added to placement successfully" };
+    }
+
+    async removeProductsFromPlacement(placementId: string, productIds: string[]) {
+        if (!productIds || !Array.isArray(productIds) || productIds.length === 0) {
+            throw new Error("Product IDs are required and must be an array");
+        }
+
+        await this.prisma.getClient().collectionPlacementProduct.deleteMany({
+            where: {
+                placementId,
+                productId: { in: productIds },
+            },
+        });
+
+        return { success: true, message: "Products removed from placement successfully" };
+    }
 }

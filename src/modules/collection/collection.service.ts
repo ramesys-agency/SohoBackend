@@ -80,6 +80,7 @@ export class CollectionService {
                         orderBy: { displayOrder: "asc" },
                         include: {
                             collection: true,
+                            _count: { select: { products: true } },
                         },
                     },
                     _count: {
@@ -110,6 +111,30 @@ export class CollectionService {
                 totalPages: Math.ceil(total / limit),
             },
         };
+    }
+
+    async createCollection(data: { name: string; gender?: GenderType[]; isActive?: boolean }) {
+        const slug = data.name
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/(^-|-$)+/g, "");
+
+        let finalSlug = slug;
+        let counter = 1;
+        while (await this.prisma.getClient().collection.findFirst({ where: { slug: finalSlug } })) {
+            finalSlug = `${slug}-${counter++}`;
+        }
+
+        const collection = await this.prisma.getClient().collection.create({
+            data: {
+                name: data.name,
+                slug: finalSlug,
+                gender: { set: data.gender ?? [] },
+                isActive: data.isActive ?? true,
+            },
+        });
+
+        return { success: true, data: collection };
     }
 
     async addProductsToCollection(collectionId: string, productIds: string[]) {

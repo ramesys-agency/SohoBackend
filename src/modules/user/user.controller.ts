@@ -1,8 +1,9 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { UserService } from "./user.service.js";
-import { updateProfileSchema } from "./user.type.js";
+import { updateProfileSchema, createAdminSchema } from "./user.type.js";
 import { StorageService } from "../../core/services/storage.service.js";
+import { AuthUtils } from "../auth/auth.utils.js";
 
 export class UserController {
     private userService = new UserService();
@@ -92,11 +93,17 @@ export class UserController {
             const page = req.query.page ? Number(req.query.page) : 1;
             const limit = req.query.limit ? Number(req.query.limit) : 20;
             const search = req.query.search as string | undefined;
+            const region = req.query.region as string | undefined;
+            const role = req.query.role as string | undefined;
+            const showDeleted = req.query.showDeleted as string | undefined;
 
             const result = await this.userService.getAllUsers({
                 page,
                 limit,
                 ...(search ? { search } : {}),
+                ...(region ? { region } : {}),
+                ...(role ? { role } : {}),
+                ...(showDeleted ? { showDeleted } : {}),
             });
 
             res.status(200).json({
@@ -148,4 +155,34 @@ export class UserController {
             res.status(500).json({ message: "Internal server error" });
         }
     };
+
+    createAdmin = async (req: Request, res: Response) => {
+        try {
+            const body = createAdminSchema.parse(req.body);
+            const passwordHash = await AuthUtils.hashPassword(body.password);
+            
+            const newAdmin = await this.userService.createAdmin({
+                email: body.email,
+                fullName: body.fullName,
+                passwordHash,
+                ...(body.phone ? { phone: body.phone } : {}),
+                ...(body.region ? { region: body.region } : {}),
+            });
+
+            res.status(201).json({
+                message: "Admin created successfully",
+                data: newAdmin,
+            });
+        } catch (error) {
+            if (error instanceof z.ZodError) {
+                return res.status(400).json({ message: "Validation error", errors: error.issues });
+            }
+            if (error && (error as any).message === "User with this email already exists") {
+                return res.status(409).json({ message: (error as any).message });
+            }
+            console.error("Error creating admin:", error);
+            res.status(500).json({ message: "Internal server error" });
+        }
+    };
 }
+

@@ -619,6 +619,64 @@ async function main() {
         }
     }
 
+    // ------------------------
+    // PLACEMENT PRODUCTS
+    // Assign each CollectionPlacement its own product list filtered by page gender.
+    // e.g. "Limited Edition" on MEN page gets only MEN products; WOMEN page gets only WOMEN products.
+    // ------------------------
+    console.log("🔗 Seeding CollectionPlacementProducts...");
+
+    const pageGenderMap: Record<string, string | null> = {
+        MEN: "MEN",
+        WOMEN: "WOMEN",
+        KIDS: "KIDS",
+        HOME: null,
+        OFFER: null,
+        OFFERS: null,
+        CATALOG: null,
+    };
+
+    const allPlacements = await prisma.collectionPlacement.findMany({
+        include: {
+            collection: {
+                include: {
+                    products: {
+                        include: { product: true },
+                        orderBy: { displayOrder: "asc" },
+                    },
+                },
+            },
+        },
+    });
+
+    for (const placement of allPlacements) {
+        const pageGender = pageGenderMap[placement.page] ?? null;
+
+        let eligibleProducts = placement.collection.products.map((pc) => pc.product);
+
+        if (pageGender) {
+            eligibleProducts = eligibleProducts.filter((p) =>
+                (p.gender as string[]).includes(pageGender)
+            );
+        }
+
+        if (eligibleProducts.length === 0) continue;
+
+        // Clear existing placement products before re-seeding (idempotent)
+        await prisma.collectionPlacementProduct.deleteMany({
+            where: { placementId: placement.id },
+        });
+
+        await prisma.collectionPlacementProduct.createMany({
+            data: eligibleProducts.map((p, idx) => ({
+                placementId: placement.id,
+                productId: p.id,
+                displayOrder: idx,
+            })),
+            skipDuplicates: true,
+        });
+    }
+
     console.log(`✅ Seed completed! Processed ${PRODUCT_COUNT} products.`);
 }
 
