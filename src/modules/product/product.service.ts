@@ -14,6 +14,7 @@ import { NotFoundError } from "../../core/errors/http-errors.js";
 import {
     getCategoryIds,
     getCollectionProductIds,
+    getPlacementProductIds,
     getAvailableFilters,
     buildFilterConditions,
     buildSortOrder,
@@ -166,6 +167,7 @@ export class ProductService implements IProductService {
             categorySlug,
             collectionId,
             collectionSlug,
+            placementId,
             isPublished,
             gender,
             minPrice,
@@ -178,9 +180,12 @@ export class ProductService implements IProductService {
         } = query;
 
         // 1. Prepare Data for Filters
+        // placementId takes priority: return only products assigned to that specific placement
         const [categoryIds, collectionProductIds] = await Promise.all([
             getCategoryIds(this.prisma.getClient(), categorySlug, categoryId),
-            getCollectionProductIds(this.prisma.getClient(), collectionSlug, collectionId),
+            placementId
+                ? getPlacementProductIds(this.prisma.getClient(), placementId)
+                : getCollectionProductIds(this.prisma.getClient(), collectionSlug, collectionId),
         ]);
 
         // 2. Build Query Parts

@@ -2,6 +2,7 @@ import { PrismaService } from "../../core/services/index.js";
 import { NotFoundError, ForbiddenError, BadRequestError } from "../../core/errors/http-errors.js";
 import { RoadRushService } from "../logistics/roadrush.service.js";
 import { CouponService } from "../coupon/coupon.service.js";
+import { NotificationService } from "../notification/notification.service.js";
 import { logger } from "../../config/logger.js";
 import { OrderStatus } from "@prisma/client";
 import { prisma } from "../../config/prisma.js";
@@ -11,6 +12,7 @@ export class OrderService {
     private prisma: PrismaService = prisma;
     private roadRush: RoadRushService = new RoadRushService();
     private couponService: CouponService = new CouponService();
+    private notificationService: NotificationService = new NotificationService();
 
     async getAllOrders(userId: string) {
         return await this.prisma.getClient().order.findMany({
@@ -207,6 +209,15 @@ export class OrderService {
             return newOrder;
         });
 
+        // 4.5. Notify the customer their order was placed.
+        await this.notificationService.notifyOrderStatusChange({
+            userId,
+            orderId: order.id,
+            orderCode: order.orderCode,
+            status: order.status,
+            itemDetails: order.itemDetails,
+        });
+
         // 5. Fire-and-forget RoadRush sync — do NOT await so the client gets a
         //    response immediately after the DB transaction. Cart is only cleared
         //    inside the transaction above, so if the transaction failed the cart
@@ -271,7 +282,7 @@ export class OrderService {
     }
 
     async updateOrderStatus(orderId: string, status: OrderStatus, note?: string) {
-        return await this.prisma.getClient().order.update({
+        const updated = await this.prisma.getClient().order.update({
             where: { id: orderId },
             data: {
                 status,
@@ -283,6 +294,17 @@ export class OrderService {
                 },
             },
         });
+
+        // Notify the customer about the status change (fire-and-forget).
+        await this.notificationService.notifyOrderStatusChange({
+            userId: updated.userId,
+            orderId: updated.id,
+            orderCode: updated.orderCode,
+            status,
+            itemDetails: updated.itemDetails,
+        });
+
+        return updated;
     }
 
     async adminUpdatePaymentStatus(orderId: string, status: string) {
@@ -391,7 +413,7 @@ export class OrderService {
                 else if (normalizedStatus.includes("failed")) ourStatus = "cancelled";
 
                 // Update order and set sync time
-                return await this.prisma.getClient().order.update({
+                const updated = await this.prisma.getClient().order.update({
                     where: { id: orderId },
                     data: {
                         status: ourStatus,
@@ -406,6 +428,19 @@ export class OrderService {
                             (order as any).user?.email,
                     },
                 });
+
+                // Only notify the customer when the status genuinely changed.
+                if (ourStatus !== order.status) {
+                    await this.notificationService.notifyOrderStatusChange({
+                        userId: updated.userId,
+                        orderId: updated.id,
+                        orderCode: updated.orderCode,
+                        status: ourStatus,
+                        itemDetails: updated.itemDetails,
+                    });
+                }
+
+                return updated;
             } else {
                 logger.warn("RoadRush refresh returned success but no order_status was found", {
                     orderId,

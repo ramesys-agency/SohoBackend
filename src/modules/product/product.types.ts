@@ -35,6 +35,7 @@ export interface GetProductsQueryDto {
     categorySlug?: string;
     collectionId?: string;
     collectionSlug?: string;
+    placementId?: string;
     gender?: string | string[];
     isPublished?: boolean;
     minPrice?: number;

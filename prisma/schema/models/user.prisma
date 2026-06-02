@@ -20,6 +20,7 @@ model User {
     wishlists           Wishlist[]
     cartItems           CartItem[]
     savedPaymentMethods SavedPaymentMethod[]
+    notifications       Notification[]
 
     createdAt DateTime  @default(now())
     updatedAt DateTime  @updatedAt

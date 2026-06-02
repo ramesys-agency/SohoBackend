@@ -29,6 +29,18 @@ export const getCategoryIds = async (
     return getCategoryDescendants(prisma, targetCategoryId);
 };
 
+export const getPlacementProductIds = async (
+    prisma: PrismaClient,
+    placementId: string
+): Promise<string[]> => {
+    const rows = await prisma.collectionPlacementProduct.findMany({
+        where: { placementId },
+        orderBy: { displayOrder: "asc" },
+        select: { productId: true },
+    });
+    return rows.map((r) => r.productId);
+};
+
 export const getCollectionProductIds = async (
     prisma: PrismaClient,
     collectionSlug?: string,

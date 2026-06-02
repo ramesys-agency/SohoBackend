@@ -16,6 +16,7 @@ import registerLogisticsModule from "../../modules/logistics/logistics.routes.js
 import { registerCouponModule } from "../../modules/coupon/index.js";
 import { registerStatsModule } from "../../modules/stats/index.js";
 import { registerHomePromoModule } from "../../modules/home-promo/index.js";
+import { registerNotificationModule } from "../../modules/notification/index.js";
 
 // import { authMiddleware } from "../../core/middleware/auth.middleware.js";
 
@@ -40,6 +41,7 @@ export function createV1Router(): Router {
     router.use("/coupons", registerCouponModule());
     router.use("/stats", registerStatsModule());
     router.use("/home-promo", registerHomePromoModule());
+    router.use("/notifications", registerNotificationModule());
 
     return router;
 }
