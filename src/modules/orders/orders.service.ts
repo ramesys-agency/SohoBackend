@@ -4,7 +4,7 @@ import { RoadRushService } from "../logistics/roadrush.service.js";
 import { CouponService } from "../coupon/coupon.service.js";
 import { NotificationService } from "../notification/notification.service.js";
 import { logger } from "../../config/logger.js";
-import { OrderStatus, type Prisma } from "@prisma/client";
+import { OrderStatus, PaymentStatus, type Prisma } from "@prisma/client";
 import { prisma } from "../../config/prisma.js";
 
 
@@ -300,7 +300,7 @@ export class OrderService {
             };
             const statuses = statusMap[params.paymentStatus.toLowerCase()];
             if (statuses) {
-                where.payments = { some: { status: { in: statuses } } };
+                where.payments = { some: { status: { in: statuses as PaymentStatus[] } } };
             }
         }
 

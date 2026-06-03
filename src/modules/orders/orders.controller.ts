@@ -56,11 +56,11 @@ export class OrderController {
         try {
             const { search, startDate, endDate, paymentStatus, fulfillmentStatus } = req.query as Record<string, string | undefined>;
             const orders = await this.orderService.adminGetAllOrders({
-                search,
-                startDate,
-                endDate,
-                paymentStatus,
-                fulfillmentStatus,
+                ...(search !== undefined && { search }),
+                ...(startDate !== undefined && { startDate }),
+                ...(endDate !== undefined && { endDate }),
+                ...(paymentStatus !== undefined && { paymentStatus }),
+                ...(fulfillmentStatus !== undefined && { fulfillmentStatus }),
             });
             res.status(200).json({
                 message: "All orders fetched successfully",
