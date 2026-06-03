@@ -153,16 +153,30 @@ export class AuthService {
         const { idToken } = input;
 
         try {
-            // Verify the token with the audience if configured.
-            const verifyOptions: any = { idToken };
-            if (config.auth.googleClientId) {
-                verifyOptions.audience = config.auth.googleClientId;
+            // Try with audience first; fall back to no-audience check if it fails
+            // (handles cases where the token aud is Android client ID instead of Web client ID)
+            let ticket;
+            try {
+                const verifyOptions: any = { idToken };
+                if (config.auth.googleClientId) {
+                    verifyOptions.audience = config.auth.googleClientId;
+                }
+                ticket = await googleClient.verifyIdToken(verifyOptions);
+            } catch (audienceErr) {
+                console.warn('[GoogleAuth] Audience check failed, retrying without audience:', (audienceErr as Error).message);
+                ticket = await googleClient.verifyIdToken({ idToken });
             }
 
-            const ticket = await googleClient.verifyIdToken(verifyOptions);
             const payload = ticket.getPayload();
 
             if (!payload || !payload.email) {
+                throw new UnauthorizedError("Invalid Google token");
+            }
+
+            // Ensure the token belongs to our Google project (project number: 715630615184)
+            const aud = payload.aud as string;
+            if (aud && !aud.startsWith('715630615184-') && aud !== config.auth.googleClientId) {
+                console.error('[GoogleAuth] Token from unauthorized project, aud:', aud);
                 throw new UnauthorizedError("Invalid Google token");
             }
 
@@ -227,7 +241,7 @@ export class AuthService {
                 refreshToken,
             };
         } catch (error) {
-            console.error("Google Auth Error:", error);
+            console.error("Google Auth Error:", error instanceof Error ? error.message : error);
             throw new UnauthorizedError("Invalid Google token");
         }
     }
