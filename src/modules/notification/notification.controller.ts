@@ -1,6 +1,6 @@
 import { type Request, type Response, type NextFunction } from "express";
 import { NotificationService } from "./notification.service.js";
-import type { AdminSendNotificationDto } from "./notification.types.js";
+import type { AdminSendNotificationDto, RegisterPushTokenDto } from "./notification.types.js";
 
 export class NotificationController {
     private notificationService = new NotificationService();
@@ -71,6 +71,46 @@ export class NotificationController {
             }
             const result = await this.notificationService.markAllAsRead(userId);
             res.status(200).json({ message: "All notifications marked as read", data: result });
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    // ---- Push token ----
+
+    registerPushToken = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const userId = req.user?.id;
+            if (!userId) {
+                res.status(401).json({ message: "Unauthorized" });
+                return;
+            }
+            const { token, platform } = req.body as RegisterPushTokenDto;
+            if (!token || !platform) {
+                res.status(400).json({ message: "token and platform are required" });
+                return;
+            }
+            const result = await this.notificationService.registerPushToken(userId, { token, platform });
+            res.status(200).json({ message: "Push token registered", data: result });
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    removePushToken = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const userId = req.user?.id;
+            if (!userId) {
+                res.status(401).json({ message: "Unauthorized" });
+                return;
+            }
+            const { token } = req.body as { token: string };
+            if (!token) {
+                res.status(400).json({ message: "token is required" });
+                return;
+            }
+            const result = await this.notificationService.removePushToken(userId, token);
+            res.status(200).json({ message: "Push token removed", data: result });
         } catch (error) {
             next(error);
         }

@@ -4,7 +4,7 @@ import { RoadRushService } from "../logistics/roadrush.service.js";
 import { CouponService } from "../coupon/coupon.service.js";
 import { NotificationService } from "../notification/notification.service.js";
 import { logger } from "../../config/logger.js";
-import { OrderStatus } from "@prisma/client";
+import { OrderStatus, type Prisma } from "@prisma/client";
 import { prisma } from "../../config/prisma.js";
 
 
@@ -256,8 +256,68 @@ export class OrderService {
         return order;
     }
 
-    async adminGetAllOrders() {
+    async adminGetAllOrders(params?: {
+        search?: string;
+        startDate?: string;
+        endDate?: string;
+        paymentStatus?: string;
+        fulfillmentStatus?: string;
+    }) {
+        const where: Prisma.OrderWhereInput = {};
+
+        if (params?.search?.trim()) {
+            const q = params.search.trim();
+            where.OR = [
+                { orderCode: { contains: q, mode: "insensitive" } },
+                { id: { contains: q, mode: "insensitive" } },
+                { customerFullName: { contains: q, mode: "insensitive" } },
+                { customerEmail: { contains: q, mode: "insensitive" } },
+                { customerMobileNumber: { contains: q, mode: "insensitive" } },
+                { user: { fullName: { contains: q, mode: "insensitive" } } },
+                { user: { email: { contains: q, mode: "insensitive" } } },
+                { user: { phone: { contains: q, mode: "insensitive" } } },
+            ];
+        }
+
+        if (params?.startDate || params?.endDate) {
+            where.createdAt = {};
+            if (params.startDate) {
+                (where.createdAt as Prisma.DateTimeFilter).gte = new Date(params.startDate);
+            }
+            if (params.endDate) {
+                // Include the full end day
+                const end = new Date(params.endDate);
+                end.setHours(23, 59, 59, 999);
+                (where.createdAt as Prisma.DateTimeFilter).lte = end;
+            }
+        }
+
+        if (params?.paymentStatus && params.paymentStatus !== "all") {
+            const statusMap: Record<string, string[]> = {
+                paid: ["success", "paid"],
+                pending: ["pending", "cod_pending"],
+                refunded: ["refunded"],
+            };
+            const statuses = statusMap[params.paymentStatus.toLowerCase()];
+            if (statuses) {
+                where.payments = { some: { status: { in: statuses } } };
+            }
+        }
+
+        if (params?.fulfillmentStatus && params.fulfillmentStatus !== "all") {
+            const statusMap: Record<string, OrderStatus | OrderStatus[]> = {
+                fulfilled: "delivered" as OrderStatus,
+                unfulfilled: ["pending", "cancelled"] as OrderStatus[],
+                processing: ["processing", "shipped"] as OrderStatus[],
+            };
+            const mapped = statusMap[params.fulfillmentStatus.toLowerCase()];
+            if (mapped) {
+                where.status = Array.isArray(mapped) ? { in: mapped } : mapped;
+            }
+        }
+
         return await this.prisma.getClient().order.findMany({
+            where,
             include: {
                 user: {
                     select: {

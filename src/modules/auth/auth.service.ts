@@ -186,14 +186,22 @@ export class AuthService {
                     },
                 });
             } else if (!user.authProviderId) {
-                // User exists but hasn't linked Google yet, link it
+                // Existing email-password user linking Google for the first time
                 user = await this.prisma.user.update({
                     where: { email },
                     data: {
                         authProvider: "google",
                         authProviderId: providerId,
                         isVerified: true,
+                        // Backfill avatar from Google if the user has none
+                        ...(!user.avatar && picture ? { avatar: picture } : {}),
                     },
+                });
+            } else if (!user.avatar && picture) {
+                // Already linked Google on previous login but still has no avatar — fill it in
+                user = await this.prisma.user.update({
+                    where: { email },
+                    data: { avatar: picture },
                 });
             }
 
@@ -467,11 +475,7 @@ export class AuthService {
             throw new BadRequestError("Please wait 60 seconds before requesting another OTP");
         }
 
-        // Generate OTP based on environment: production -> secure random 6-digit; development/test -> 000000
-        let otpCode = "000000";
-        if (config.isProduction) {
-            otpCode = crypto.randomInt(100000, 999999).toString();
-        }
+        const otpCode = crypto.randomInt(100000, 999999).toString();
 
         // Hash the OTP before storing it to protect against Redis DB exposure
         const hashedOtp = crypto.createHash("sha256").update(otpCode).digest("hex");

@@ -21,6 +21,7 @@ model User {
     cartItems           CartItem[]
     savedPaymentMethods SavedPaymentMethod[]
     notifications       Notification[]
+    pushTokens          PushToken[]
 
     createdAt DateTime  @default(now())
     updatedAt DateTime  @updatedAt

@@ -54,7 +54,14 @@ export class OrderController {
 
     adminGetAllOrders = async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const orders = await this.orderService.adminGetAllOrders();
+            const { search, startDate, endDate, paymentStatus, fulfillmentStatus } = req.query as Record<string, string | undefined>;
+            const orders = await this.orderService.adminGetAllOrders({
+                search,
+                startDate,
+                endDate,
+                paymentStatus,
+                fulfillmentStatus,
+            });
             res.status(200).json({
                 message: "All orders fetched successfully",
                 data: orders,

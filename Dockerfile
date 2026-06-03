@@ -16,6 +16,8 @@ RUN npm run build
 # Production stage
 FROM node:22.13.0-alpine AS production
 
+ENV NODE_ENV=production
+
 WORKDIR /app
 
 RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001

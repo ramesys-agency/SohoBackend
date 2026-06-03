@@ -8,6 +8,11 @@ export interface CreateNotificationDto {
     data?: Record<string, unknown> | null;
 }
 
+export interface RegisterPushTokenDto {
+    token: string;
+    platform: "ios" | "android";
+}
+
 /**
  * Filters the admin can use to target a broadcast.
  * - audience "all": every customer
@@ -26,4 +31,7 @@ export interface AdminSendNotificationDto {
 
     // When true, admins are also included. Defaults to false (customers only).
     includeAdmins?: boolean;
+
+    // When false, only in-app notifications are created (no mobile push). Defaults to true.
+    pushEnabled?: boolean;
 }

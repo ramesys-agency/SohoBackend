@@ -11,5 +11,9 @@ notificationRoutes.get("/unread-count", authMiddleware, controller.getUnreadCoun
 notificationRoutes.patch("/read-all", authMiddleware, controller.markAllAsRead);
 notificationRoutes.patch("/:id/read", authMiddleware, controller.markAsRead);
 
+// Push token routes
+notificationRoutes.post("/push-token", authMiddleware, controller.registerPushToken);
+notificationRoutes.delete("/push-token", authMiddleware, controller.removePushToken);
+
 // Admin routes
 notificationRoutes.post("/admin/send", authMiddleware, adminMiddleware, controller.adminSend);

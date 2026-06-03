@@ -1,17 +1,17 @@
+import { Expo } from "expo-server-sdk";
+import type { ExpoPushMessage } from "expo-server-sdk";
 import type { NotificationType, Prisma } from "@prisma/client";
 import { PrismaService } from "../../core/services/index.js";
 import { prisma } from "../../config/prisma.js";
 import { logger } from "../../config/logger.js";
 import { BadRequestError } from "../../core/errors/index.js";
-import type { AdminSendNotificationDto, CreateNotificationDto } from "./notification.types.js";
+import type { AdminSendNotificationDto, CreateNotificationDto, RegisterPushTokenDto } from "./notification.types.js";
+
+const expo = new Expo();
 
 export class NotificationService {
     private prisma: PrismaService = prisma;
 
-    /**
-     * Fetch notifications for a single user, newest first.
-     * `filter` controls whether to return all, only-read or only-unread items.
-     */
     async getUserNotifications(
         userId: string,
         filter: "all" | "read" | "unread" = "all",
@@ -35,7 +35,6 @@ export class NotificationService {
     }
 
     async markAsRead(userId: string, notificationId: string) {
-        // Scope the update to the owner so users can't touch others' notifications.
         const result = await this.prisma.getClient().notification.updateMany({
             where: { id: notificationId, userId },
             data: { isRead: true, readAt: new Date() },
@@ -56,14 +55,75 @@ export class NotificationService {
         return { success: true, updated: result.count };
     }
 
-    /**
-     * Core helper: create a notification for a single user. Used by other
-     * modules (e.g. orders) to notify a user about something. Never throws to
-     * the caller — notification failures must not break the parent operation.
-     */
+    // ---- Push token management ----
+
+    async registerPushToken(userId: string, dto: RegisterPushTokenDto) {
+        if (!Expo.isExpoPushToken(dto.token)) {
+            throw new BadRequestError("Invalid Expo push token");
+        }
+
+        await this.prisma.getClient().pushToken.upsert({
+            where: { token: dto.token },
+            update: { userId, platform: dto.platform },
+            create: { userId, token: dto.token, platform: dto.platform },
+        });
+
+        return { success: true };
+    }
+
+    async removePushToken(userId: string, token: string) {
+        await this.prisma.getClient().pushToken.deleteMany({
+            where: { userId, token },
+        });
+        return { success: true };
+    }
+
+    // ---- Internal push delivery ----
+
+    private async sendPushToUsers(
+        userIds: string[],
+        title: string,
+        body: string,
+        data?: Record<string, unknown> | null
+    ) {
+        if (userIds.length === 0) return;
+
+        const rows = await this.prisma.getClient().pushToken.findMany({
+            where: { userId: { in: userIds } },
+            select: { token: true },
+        });
+
+        const tokens = rows
+            .map((r: { token: string }) => r.token)
+            .filter((t: string) => Expo.isExpoPushToken(t));
+
+        if (tokens.length === 0) return;
+
+        const messages: ExpoPushMessage[] = tokens.map((token: string) => ({
+            to: token,
+            sound: "default" as const,
+            title,
+            body,
+            data: (data ?? {}) as Record<string, unknown>,
+        }));
+
+        const chunks = expo.chunkPushNotifications(messages);
+        for (const chunk of chunks) {
+            try {
+                await expo.sendPushNotificationsAsync(chunk);
+            } catch (error) {
+                logger.warn("Push notification delivery failed", {
+                    error: error instanceof Error ? error.message : String(error),
+                });
+            }
+        }
+    }
+
+    // ---- Core notification creation ----
+
     async createForUser(dto: CreateNotificationDto) {
         try {
-            return await this.prisma.getClient().notification.create({
+            const notification = await this.prisma.getClient().notification.create({
                 data: {
                     userId: dto.userId,
                     title: dto.title,
@@ -74,6 +134,11 @@ export class NotificationService {
                         : {}),
                 },
             });
+
+            // Fire-and-forget — push failure must not break the parent operation
+            this.sendPushToUsers([dto.userId], dto.title, dto.body, dto.data).catch(() => {});
+
+            return notification;
         } catch (error) {
             logger.error("Failed to create notification", {
                 userId: dto.userId,
@@ -83,11 +148,6 @@ export class NotificationService {
         }
     }
 
-    /**
-     * Admin broadcast: resolve target users from the supplied filters and
-     * create one notification row per recipient (so each can be marked read
-     * individually and surfaced in that user's in-app inbox).
-     */
     async adminSend(dto: AdminSendNotificationDto) {
         if (!dto.title?.trim()) throw new BadRequestError("Title is required");
         if (!dto.body?.trim()) throw new BadRequestError("Body is required");
@@ -96,7 +156,6 @@ export class NotificationService {
 
         const where: Prisma.UserWhereInput = { isDeleted: false };
 
-        // By default only target customers; admins opt-in explicitly.
         if (!dto.includeAdmins) {
             where.role = "customer";
         }
@@ -129,7 +188,7 @@ export class NotificationService {
             dto.data != null ? { data: dto.data as Prisma.InputJsonValue } : {};
 
         const result = await this.prisma.getClient().notification.createMany({
-            data: recipients.map((u) => ({
+            data: recipients.map((u: { id: string }) => ({
                 userId: u.id,
                 title: dto.title.trim(),
                 body: dto.body.trim(),
@@ -145,13 +204,15 @@ export class NotificationService {
             type,
         });
 
+        // Fire-and-forget push delivery (skip if admin opted for in-app only)
+        if (dto.pushEnabled !== false) {
+            const recipientIds = recipients.map((u: { id: string }) => u.id);
+            this.sendPushToUsers(recipientIds, dto.title.trim(), dto.body.trim(), dto.data).catch(() => {});
+        }
+
         return { sent: result.count, recipients: recipients.length };
     }
 
-    /**
-     * Domain helper used by the order module to notify a customer that their
-     * order status changed.
-     */
     async notifyOrderStatusChange(params: {
         userId: string;
         orderId: string;
