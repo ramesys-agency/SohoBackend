@@ -4,7 +4,7 @@ import { AuthUtils } from "./auth.utils.js";
 import { config } from "../../config/index.js";
 import { ConflictError, UnauthorizedError, BadRequestError } from "../../core/errors/index.js";
 import { MailService } from "../../core/services/index.js";
-import { OAuth2Client } from "google-auth-library";
+// import { OAuth2Client } from "google-auth-library";
 import appleSignin from "apple-signin-auth";
 import { redis } from "../../config/redis.js";
 import crypto from "crypto";
@@ -13,11 +13,13 @@ import https from "https";
 function googleTokenInfo(idToken: string): Promise<any> {
     return new Promise((resolve, reject) => {
         const path = `/tokeninfo?id_token=${encodeURIComponent(idToken)}`;
-        https.get({ hostname: 'oauth2.googleapis.com', path, port: 443 }, (res) => {
-            let body = '';
-            res.on('data', (c) => body += c);
-            res.on('end', () => resolve({ status: res.statusCode, data: JSON.parse(body) }));
-        }).on('error', reject);
+        https
+            .get({ hostname: "oauth2.googleapis.com", path, port: 443 }, (res) => {
+                let body = "";
+                res.on("data", (c) => (body += c));
+                res.on("end", () => resolve({ status: res.statusCode, data: JSON.parse(body) }));
+            })
+            .on("error", reject);
     });
 }
 import type {
@@ -31,8 +33,7 @@ import type {
     VerifyOtpInput,
 } from "./auth.schema.js";
 
-
-const googleClient = new OAuth2Client();
+// const googleClient = new OAuth2Client();
 
 export class AuthService {
     private prisma: PrismaClient;
@@ -73,7 +74,9 @@ export class AuthService {
         const verifiedKey = `otp:verified:${email}`;
         const isVerified = await redis.get<string>(verifiedKey);
         if (!isVerified) {
-            throw new BadRequestError("Email is not verified. Please verify your email via OTP first.");
+            throw new BadRequestError(
+                "Email is not verified. Please verify your email via OTP first."
+            );
         }
         // Consume the verification token
         await redis.del(verifiedKey);
@@ -174,27 +177,32 @@ export class AuthService {
             try {
                 const { status, data: tokenInfo } = await googleTokenInfo(idToken);
                 if (status === 200 && tokenInfo.email && !tokenInfo.error) {
+                    // Validate audience against our configured client ID
+                    if (tokenInfo.aud !== config.auth.googleClientId) {
+                        throw new UnauthorizedError("Invalid Google token audience");
+                    }
                     email = tokenInfo.email;
                     providerId = tokenInfo.sub;
                     name = tokenInfo.name;
                     picture = tokenInfo.picture;
                 } else {
-                    throw new Error('tokeninfo failed');
+                    throw new Error("tokeninfo failed");
                 }
-            } catch {
+            } catch (err) {
+                if (err instanceof UnauthorizedError) throw err;
                 // Fallback: decode JWT locally (no network call needed)
-                const parts = idToken.split('.');
+                const parts = idToken.split(".");
                 if (parts.length !== 3) throw new UnauthorizedError("Invalid Google token");
-                const payload = JSON.parse(Buffer.from(parts[1]!, 'base64url').toString('utf8'));
+                const payload = JSON.parse(Buffer.from(parts[1]!, "base64url").toString("utf8"));
                 const now = Math.floor(Date.now() / 1000);
-                const GOOGLE_ISSUERS = ['https://accounts.google.com', 'accounts.google.com'];
+                const GOOGLE_ISSUERS = ["https://accounts.google.com", "accounts.google.com"];
                 if (!payload.email || !GOOGLE_ISSUERS.includes(payload.iss) || payload.exp < now) {
                     throw new UnauthorizedError("Invalid Google token");
                 }
-                if (payload.aud && !String(payload.aud).startsWith('715630615184-')) {
-                    throw new UnauthorizedError("Invalid Google token");
+                if (payload.aud !== config.auth.googleClientId) {
+                    throw new UnauthorizedError("Invalid Google token audience");
                 }
-                console.warn('[GoogleAuth] Used local JWT decode (tokeninfo unreachable)');
+                console.warn("[GoogleAuth] Used local JWT decode (tokeninfo unreachable)");
                 email = payload.email;
                 providerId = payload.sub;
                 name = payload.name;
@@ -543,7 +551,9 @@ export class AuthService {
         // Get stored OTP hash
         const storedHash = await redis.get<string>(otpKey);
         if (!storedHash) {
-            throw new BadRequestError("OTP has expired or does not exist. Please request a new one.");
+            throw new BadRequestError(
+                "OTP has expired or does not exist. Please request a new one."
+            );
         }
 
         // Security feature 5: Increment failed attempt counter to protect against brute-force attacks
@@ -554,7 +564,9 @@ export class AuthService {
         if (currentAttempts > 3) {
             // Brute force detected: invalidate OTP immediately by deleting keys
             await redis.del(otpKey, attemptKey);
-            throw new BadRequestError("Too many failed attempts. This OTP has been invalidated. Please request a new one.");
+            throw new BadRequestError(
+                "Too many failed attempts. This OTP has been invalidated. Please request a new one."
+            );
         }
 
         // Hash incoming OTP and compare

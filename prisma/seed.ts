@@ -677,6 +677,60 @@ async function main() {
         });
     }
 
+    // ------------------------
+    // HOMEPAGE PROMOTIONS (HomePromo)
+    // ------------------------
+    console.log("📢 Seeding Homepage Promotions...");
+    
+    // Clear existing to avoid duplicate conflicts and keep a clean slate of 4 fixed sections
+    await prisma.homePromo.deleteMany({});
+    
+    const trendingCol = await prisma.collection.findFirst({
+        where: { slug: "trending-now" },
+    });
+    const defaultCol = trendingCol || (await prisma.collection.findFirst()) || null;
+
+    const DEFAULT_PROMOS = [
+        {
+            title: "Women Fashionable Top",
+            description: "This dress embodies sustainable fashion practices, woven from eco-friendly materials and produced with ethical craftsmanship.",
+            contentType: "COLLECTION",
+            collectionId: defaultCol?.id || null,
+            imageUrl: "https://images.unsplash.com/photo-1496747611176-843222e1e57c?q=80&w=800&auto=format&fit=crop",
+            isActive: true,
+        },
+        {
+            title: "Fashionable Dress",
+            description: "This dress embodies sustainable fashion practices, woven from eco-friendly materials and produced with ethical craftsmanship.",
+            contentType: "COLLECTION",
+            collectionId: defaultCol?.id || null,
+            imageUrl: "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?q=80&w=687&auto=format&fit=crop",
+            isActive: true,
+        },
+        {
+            title: "Luxurious Gown",
+            description: "This dress embodies sustainable fashion practices, woven from eco-friendly materials and produced with ethical craftsmanship.",
+            contentType: "COLLECTION",
+            collectionId: defaultCol?.id || null,
+            imageUrl: "https://images.unsplash.com/photo-1566174053879-31528523f8ae?q=80&w=800&auto=format&fit=crop",
+            isActive: true,
+        },
+        {
+            title: "Fashionable Heals",
+            description: "This dress embodies sustainable fashion practices, woven from eco-friendly materials and produced with ethical craftsmanship.",
+            contentType: "COLLECTION",
+            collectionId: defaultCol?.id || null,
+            imageUrl: "https://images.unsplash.com/photo-1543163521-1bf539c55dd2?q=80&w=800&auto=format&fit=crop",
+            isActive: true,
+        },
+    ];
+
+    for (const promo of DEFAULT_PROMOS) {
+        await prisma.homePromo.create({
+            data: promo,
+        });
+    }
+
     console.log(`✅ Seed completed! Processed ${PRODUCT_COUNT} products.`);
 }
 
