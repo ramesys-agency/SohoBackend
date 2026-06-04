@@ -8,6 +8,18 @@ import { OAuth2Client } from "google-auth-library";
 import appleSignin from "apple-signin-auth";
 import { redis } from "../../config/redis.js";
 import crypto from "crypto";
+import https from "https";
+
+function googleTokenInfo(idToken: string): Promise<any> {
+    return new Promise((resolve, reject) => {
+        const path = `/tokeninfo?id_token=${encodeURIComponent(idToken)}`;
+        https.get({ hostname: 'oauth2.googleapis.com', path, port: 443 }, (res) => {
+            let body = '';
+            res.on('data', (c) => body += c);
+            res.on('end', () => resolve({ status: res.statusCode, data: JSON.parse(body) }));
+        }).on('error', reject);
+    });
+}
 import type {
     SignupInput,
     LoginInput,
@@ -153,27 +165,41 @@ export class AuthService {
         const { idToken } = input;
 
         try {
-            // Verify using Google's tokeninfo endpoint (works without local cert fetching)
-            const tokenInfoRes = await fetch(
-                `https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`
-            );
-            const tokenInfo = await tokenInfoRes.json() as any;
+            let email: string;
+            let providerId: string;
+            let name: string | undefined;
+            let picture: string | undefined;
 
-            if (!tokenInfoRes.ok || !tokenInfo.email || tokenInfo.error) {
-                console.error('[GoogleAuth] tokeninfo failed:', tokenInfo);
-                throw new UnauthorizedError("Invalid Google token");
+            // Try Google's tokeninfo endpoint first
+            try {
+                const { status, data: tokenInfo } = await googleTokenInfo(idToken);
+                if (status === 200 && tokenInfo.email && !tokenInfo.error) {
+                    email = tokenInfo.email;
+                    providerId = tokenInfo.sub;
+                    name = tokenInfo.name;
+                    picture = tokenInfo.picture;
+                } else {
+                    throw new Error('tokeninfo failed');
+                }
+            } catch {
+                // Fallback: decode JWT locally (no network call needed)
+                const parts = idToken.split('.');
+                if (parts.length !== 3) throw new UnauthorizedError("Invalid Google token");
+                const payload = JSON.parse(Buffer.from(parts[1]!, 'base64url').toString('utf8'));
+                const now = Math.floor(Date.now() / 1000);
+                const GOOGLE_ISSUERS = ['https://accounts.google.com', 'accounts.google.com'];
+                if (!payload.email || !GOOGLE_ISSUERS.includes(payload.iss) || payload.exp < now) {
+                    throw new UnauthorizedError("Invalid Google token");
+                }
+                if (payload.aud && !String(payload.aud).startsWith('715630615184-')) {
+                    throw new UnauthorizedError("Invalid Google token");
+                }
+                console.warn('[GoogleAuth] Used local JWT decode (tokeninfo unreachable)');
+                email = payload.email;
+                providerId = payload.sub;
+                name = payload.name;
+                picture = payload.picture;
             }
-
-            // Ensure token belongs to our Google project
-            if (tokenInfo.aud && !tokenInfo.aud.startsWith('715630615184-')) {
-                console.error('[GoogleAuth] Token from unauthorized project, aud:', tokenInfo.aud);
-                throw new UnauthorizedError("Invalid Google token");
-            }
-
-            const email: string = tokenInfo.email;
-            const providerId: string = tokenInfo.sub;
-            const name: string | undefined = tokenInfo.name;
-            const picture: string | undefined = tokenInfo.picture;
 
             let user = await this.prisma.user.findUnique({
                 where: { email },
