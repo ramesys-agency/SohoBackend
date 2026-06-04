@@ -153,34 +153,27 @@ export class AuthService {
         const { idToken } = input;
 
         try {
-            // Try with audience first; fall back to no-audience check if it fails
-            // (handles cases where the token aud is Android client ID instead of Web client ID)
-            let ticket;
-            try {
-                const verifyOptions: any = { idToken };
-                if (config.auth.googleClientId) {
-                    verifyOptions.audience = config.auth.googleClientId;
-                }
-                ticket = await googleClient.verifyIdToken(verifyOptions);
-            } catch (audienceErr) {
-                console.warn('[GoogleAuth] Audience check failed, retrying without audience:', (audienceErr as Error).message);
-                ticket = await googleClient.verifyIdToken({ idToken });
-            }
+            // Verify using Google's tokeninfo endpoint (works without local cert fetching)
+            const tokenInfoRes = await fetch(
+                `https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`
+            );
+            const tokenInfo = await tokenInfoRes.json() as any;
 
-            const payload = ticket.getPayload();
-
-            if (!payload || !payload.email) {
+            if (!tokenInfoRes.ok || !tokenInfo.email || tokenInfo.error) {
+                console.error('[GoogleAuth] tokeninfo failed:', tokenInfo);
                 throw new UnauthorizedError("Invalid Google token");
             }
 
-            // Ensure the token belongs to our Google project (project number: 715630615184)
-            const aud = payload.aud as string;
-            if (aud && !aud.startsWith('715630615184-') && aud !== config.auth.googleClientId) {
-                console.error('[GoogleAuth] Token from unauthorized project, aud:', aud);
+            // Ensure token belongs to our Google project
+            if (tokenInfo.aud && !tokenInfo.aud.startsWith('715630615184-')) {
+                console.error('[GoogleAuth] Token from unauthorized project, aud:', tokenInfo.aud);
                 throw new UnauthorizedError("Invalid Google token");
             }
 
-            const { email, sub: providerId, name, picture } = payload;
+            const email: string = tokenInfo.email;
+            const providerId: string = tokenInfo.sub;
+            const name: string | undefined = tokenInfo.name;
+            const picture: string | undefined = tokenInfo.picture;
 
             let user = await this.prisma.user.findUnique({
                 where: { email },
