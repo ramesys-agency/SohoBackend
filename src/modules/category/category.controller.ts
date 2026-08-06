@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
-import { CategoryService } from "./category.service.js";
+import { CategoryService, type GenderPlacementInput } from "./category.service.js";
 
 export class CategoryController {
     private categoryService = new CategoryService();
@@ -40,6 +40,7 @@ export class CategoryController {
                 name: string;
                 parentId?: string;
                 imageUrl?: string;
+                genderImages?: GenderPlacementInput[];
                 attributes?: Record<string, string> | any[];
             };
             const result = await this.categoryService.createCategory(data);
@@ -58,6 +59,7 @@ export class CategoryController {
                 imageUrl?: string;
                 isActive?: boolean;
                 displayOrder?: number;
+                genderImages?: GenderPlacementInput[];
                 attributes?: Record<string, string> | any[];
             };
             const result = await this.categoryService.updateCategory(id, data);

@@ -2,7 +2,36 @@ import { PrismaService } from "../../core/services/index.js";
 import { GenderType, type Prisma } from "@prisma/client";
 import { NotFoundError } from "../../core/errors/http-errors.js";
 import { prisma } from "../../config/prisma.js";
+import { getCategoryDescendants } from "../product/helpers/get-all-products.js";
 
+/**
+ * One gender tab's placement config for a category, as sent by the admin panel.
+ * imageUrl is optional so a category can be featured in a tab using its base
+ * image; isActive false keeps the row (preserving its image and order) while
+ * hiding the category from that tab.
+ */
+export type GenderPlacementInput = {
+    gender: string;
+    imageUrl?: string | null;
+    isActive?: boolean;
+    displayOrder?: number;
+};
+
+/**
+ * Counts only products a shopper could actually reach. Products default to
+ * isPublished false on creation, and delete is a soft delete, so an unfiltered
+ * count reports drafts and deleted stock as live inventory.
+ */
+const VISIBLE_PRODUCT_COUNT = {
+    select: { products: { where: { isPublished: true, deletedAt: null } } },
+} as const;
+
+const toPlacementCreateData = (placement: GenderPlacementInput) => ({
+    gender: placement.gender as GenderType,
+    imageUrl: placement.imageUrl || null,
+    isActive: placement.isActive ?? true,
+    displayOrder: placement.displayOrder ?? 0,
+});
 
 export class CategoryService {
     private prisma = prisma;
@@ -30,59 +59,25 @@ export class CategoryService {
             }
         }
 
-        if (gender && Object.values(GenderType).includes(gender as GenderType)) {
-            // Check if categories have products for this gender
-            // OR have gender-specific images
-            // OR have children that match these criteria
-            where.OR = [
-                {
-                    products: {
-                        some: {
-                            gender: {
-                                has: gender as GenderType,
-                            },
-                        },
-                    },
-                },
-                {
-                    genderImages: {
-                        some: {
-                            gender: gender as GenderType,
-                        },
-                    },
-                },
-                {
-                    children: {
-                        some: {
-                            OR: [
-                                {
-                                    products: {
-                                        some: {
-                                            gender: {
-                                                has: gender as GenderType,
-                                            },
-                                        },
-                                    },
-                                },
-                                {
-                                    genderImages: {
-                                        some: {
-                                            gender: gender as GenderType,
-                                        },
-                                    },
-                                },
-                            ],
-                        },
-                    },
-                },
-            ];
-        }
-
         let page = parseInt(query.page || "1", 10);
         let limit = parseInt(query.limit || "10", 10);
         if (isNaN(page) || page < 1) page = 1;
         if (isNaN(limit) || limit < 1) limit = 10;
         const skip = (page - 1) * limit;
+
+        // Gender tabs are driven entirely by explicit placements configured in the
+        // admin panel. A category appears under a gender only if it has an active
+        // CategoryImage row for it — product inventory is deliberately not consulted,
+        // so what merchandising configures is exactly what the app renders.
+        if (gender && Object.values(GenderType).includes(gender as GenderType)) {
+            return this.getCategoriesByGenderPlacement({
+                gender: gender as GenderType,
+                categoryWhere: where,
+                page,
+                limit,
+                skip,
+            });
+        }
 
         const [categories, total] = await Promise.all([
             this.prisma.getClient().category.findMany({
@@ -100,22 +95,82 @@ export class CategoryService {
             this.prisma.getClient().category.count({ where }),
         ]);
 
+        // Gender-less listing: no tab context, so there is no correct gender image
+        // to prefer. Fall back to any configured one, then the base image.
         return {
             success: true,
-            data: categories.map((cat: any) => {
-                // Determine the best image:
-                // 1. Try image for the requested gender
-                // 2. Fallback to any available gender image
-                // 3. Fallback to base imageUrl
-                const requestedGenderImage = gender 
-                    ? cat.genderImages?.find((img: any) => img.gender === gender.toUpperCase())?.imageUrl 
-                    : null;
-                
-                const fallbackImage = cat.genderImages?.[0]?.imageUrl;
+            data: categories.map((cat: any) => ({
+                ...cat,
+                imageUrl: cat.genderImages?.[0]?.imageUrl || cat.imageUrl,
+            })),
+            meta: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit),
+            },
+        };
+    }
+
+    /**
+     * Resolves the categories configured to appear in a single gender tab.
+     *
+     * Driven from CategoryImage rather than Category so that displayOrder sorting
+     * and pagination both happen in the database — sorting after a `take` would
+     * only order whichever page came back.
+     */
+    private async getCategoriesByGenderPlacement(args: {
+        gender: GenderType;
+        categoryWhere: Prisma.CategoryWhereInput;
+        page: number;
+        limit: number;
+        skip: number;
+    }) {
+        const { gender, categoryWhere, page, limit, skip } = args;
+
+        const where: Prisma.CategoryImageWhereInput = {
+            gender,
+            isActive: true,
+            // deletedAt is explicit rather than inherited from the caller's isActive
+            // filter: soft-delete happens to clear isActive today, but a placement
+            // must never resurrect a deleted category if that ever changes.
+            category: { ...categoryWhere, deletedAt: null },
+        };
+
+        const [placements, total] = await Promise.all([
+            this.prisma.getClient().categoryImage.findMany({
+                where,
+                include: {
+                    category: {
+                        include: {
+                            children: true,
+                            genderImages: true,
+                        },
+                    },
+                },
+                orderBy: [{ displayOrder: "asc" }, { category: { name: "asc" } }],
+                skip,
+                take: limit,
+            }),
+            this.prisma.getClient().categoryImage.count({ where }),
+        ]);
+
+        return {
+            success: true,
+            data: placements.map((placement: any) => {
+                const { category, ...rest } = placement;
 
                 return {
-                    ...cat,
-                    imageUrl: requestedGenderImage || fallbackImage || cat.imageUrl
+                    ...category,
+                    // The placement's own image, else the category's neutral base image.
+                    // Never another gender's image — that is what previously surfaced
+                    // womenswear photography under the Men tab.
+                    imageUrl: rest.imageUrl || category.imageUrl,
+                    placement: {
+                        id: rest.id,
+                        gender: rest.gender,
+                        displayOrder: rest.displayOrder,
+                    },
                 };
             }),
             meta: {
@@ -137,9 +192,7 @@ export class CategoryService {
             include: {
                 children: true,
                 genderImages: true,
-                _count: {
-                    select: { products: true },
-                },
+                _count: VISIBLE_PRODUCT_COUNT,
             },
             orderBy: {
                 name: "asc",
@@ -166,7 +219,7 @@ export class CategoryService {
         name: string;
         parentId?: string;
         imageUrl?: string;
-        genderImages?: { gender: string; imageUrl: string }[];
+        genderImages?: GenderPlacementInput[];
         attributes?: Record<string, any> | any[];
     }) {
         const slug = data.name
@@ -214,10 +267,7 @@ export class CategoryService {
                 imageUrl: data.imageUrl || null,
                 ...(data.genderImages && data.genderImages.length > 0 && {
                     genderImages: {
-                        create: data.genderImages.map(gi => ({
-                            gender: gi.gender as any,
-                            imageUrl: gi.imageUrl
-                        }))
+                        create: data.genderImages.map(toPlacementCreateData),
                     }
                 }),
                 ...(attributesCreateData.length > 0 && {
@@ -247,7 +297,7 @@ export class CategoryService {
             imageUrl?: string;
             isActive?: boolean;
             displayOrder?: number;
-            genderImages?: { gender: string; imageUrl: string }[];
+            genderImages?: GenderPlacementInput[];
             attributes?: Record<string, any> | any[];
         }
     ) {
@@ -281,15 +331,20 @@ export class CategoryService {
         if (data.isActive !== undefined) updateData.isActive = data.isActive;
         if (data.displayOrder !== undefined) updateData.displayOrder = data.displayOrder;
 
+        // Upsert per gender rather than delete-and-recreate: these rows now carry
+        // merchandising config (visibility, order), so wiping the ones absent from a
+        // payload would silently discard an admin's tab setup. Genders the caller
+        // omits entirely are left untouched.
         if (data.genderImages !== undefined) {
-            await this.prisma.getClient().categoryImage.deleteMany({ where: { categoryId: id } });
-            if (data.genderImages.length > 0) {
-                updateData.genderImages = {
-                    create: data.genderImages.map(gi => ({
-                        gender: gi.gender as any,
-                        imageUrl: gi.imageUrl
-                    }))
-                };
+            for (const placement of data.genderImages) {
+                const values = toPlacementCreateData(placement);
+                await this.prisma.getClient().categoryImage.upsert({
+                    where: {
+                        categoryId_gender: { categoryId: id, gender: values.gender },
+                    },
+                    create: { ...values, categoryId: id },
+                    update: values,
+                });
             }
         }
 
@@ -443,7 +498,7 @@ export class CategoryService {
         }
 
         const childrenInclude = {
-            _count: { select: { products: true } },
+            _count: VISIBLE_PRODUCT_COUNT,
             genderImages: true,
         } as const;
 
@@ -457,9 +512,7 @@ export class CategoryService {
             this.prisma.getClient().category.findMany({
                 where,
                 include: {
-                    _count: {
-                        select: { products: true },
-                    },
+                    _count: VISIBLE_PRODUCT_COUNT,
                     genderImages: true,
                     children: childrenArgs,
                 },
@@ -518,7 +571,41 @@ export class CategoryService {
 
         return {
             success: true,
-            data: category,
+            data: {
+                ...category,
+                genderProductCounts: await this.countProductsByGender(id),
+            },
         };
+    }
+
+    /**
+     * Published, non-deleted product count per gender for a category.
+     *
+     * Counts descendants too, mirroring getCategoryIds in the product module — the
+     * admin panel links straight through to the product list filtered by this
+     * category, and that filter expands to descendants. Counting only direct
+     * children here would show a number that disagrees with the list it links to.
+     */
+    private async countProductsByGender(categoryId: string) {
+        const db = this.prisma.getClient();
+        const categoryIds = await getCategoryDescendants(db, categoryId);
+
+        const genders = [GenderType.MEN, GenderType.WOMEN, GenderType.KIDS];
+        const counts = await Promise.all(
+            genders.map((gender) =>
+                db.product.count({
+                    where: {
+                        categoryId: { in: categoryIds },
+                        isPublished: true,
+                        deletedAt: null,
+                        gender: { has: gender },
+                    },
+                })
+            )
+        );
+
+        return Object.fromEntries(
+            genders.map((gender, index) => [gender, counts[index] ?? 0])
+        ) as Record<GenderType, number>;
     }
 }

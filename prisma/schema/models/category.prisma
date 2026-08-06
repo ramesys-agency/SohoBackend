@@ -38,12 +38,21 @@ model CategoryAttribute {
     @@unique([categoryId, key])
 }
 
+// Controls whether a category appears in a given gender tab of the mobile
+// catalog, and in what order. A row is an explicit opt-in: no row (or
+// isActive false) means the category is hidden from that tab, regardless of
+// what products it holds. imageUrl is optional — an enabled placement with no
+// image falls back to Category.imageUrl.
 model CategoryImage {
     id         String   @id @default(uuid())
     categoryId String
     category   Category @relation(fields: [categoryId], references: [id])
     gender     GenderType
-    imageUrl   String
+    imageUrl   String?
+
+    isActive     Boolean @default(true)
+    displayOrder Int     @default(0)
 
     @@unique([categoryId, gender])
+    @@index([gender, isActive, displayOrder])
 }

@@ -104,7 +104,7 @@ export const getAvailableFilters = async (
     );
 };
 
-const getCategoryDescendants = async (
+export const getCategoryDescendants = async (
     prisma: PrismaClient,
     categoryId: string
 ): Promise<string[]> => {

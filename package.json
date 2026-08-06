@@ -28,6 +28,7 @@
         "docker:build": "docker compose build",
         "docker:up": "docker compose up -d",
         "docker:down": "docker compose down",
+        "db:backfill-category-placements": "tsx src/scripts/backfill-category-gender-placements.ts",
         "db:sync-locations": "tsx src/scripts/sync-locations.ts",
         "db:sync-locations:prod": "node dist/scripts/sync-locations.js"
     },
