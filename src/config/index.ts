@@ -69,6 +69,10 @@ export const config = {
         baseUrl: env.ROADRUSH_BASE_URL,
         username: env.ROADRUSH_USERNAME,
         password: env.ROADRUSH_PASSWORD,
+        pickupAddressId: env.ROADRUSH_PICKUP_ADDRESS_ID,
+        pollEnabled: env.ORDER_STATUS_POLL_ENABLED,
+        pollIntervalMinutes: env.ORDER_STATUS_POLL_INTERVAL_MINUTES,
+        pollBatchSize: env.ORDER_STATUS_POLL_BATCH_SIZE,
     },
     
     license: {

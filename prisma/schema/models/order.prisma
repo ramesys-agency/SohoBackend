@@ -32,6 +32,10 @@ model Order {
     orderCode               String?
     lastLogisticsSync       DateTime?
 
+    // Raw partner status name (e.g. "Rider Accepted"), kept alongside the
+    // collapsed `status` enum so tracking shows what RoadRush actually reported.
+    logisticsStatusName String?
+
     // Detailed Logistics & COD Fields
     cashCollectAmount   Decimal? @default(0)
     deliveryFee         Decimal? @default(0)
@@ -42,6 +46,7 @@ model Order {
     otp                 String?
     rcvPay              Boolean? @default(true)
     requestDeliveryDate String?
+    distanceKm          Decimal? @default(0)
 
 
     createdAt DateTime @default(now())
@@ -68,8 +73,14 @@ model OrderStatusLog {
     status  OrderStatus
     note    String?
 
+    // Set only for entries mirrored from RoadRush `status_details`. Null means
+    // the entry was written by an admin action.
+    logisticsStatusName String?
+
     order     Order    @relation(fields: [orderId], references: [id])
     createdAt DateTime @default(now())
+
+    @@index([orderId, logisticsStatusName])
 }
 
 model Return {
@@ -78,6 +89,24 @@ model Return {
     reason      String
     status      ReturnStatus @default(requested)
 
+    // Returns are raised by an admin after the customer reaches out (WhatsApp,
+    // phone, email), so a partial quantity is common — a customer keeps two of
+    // three shirts and sends one back.
+    quantity Int @default(1)
+
+    // Internal admin note, e.g. "Customer sent photos on WhatsApp, sleeve torn".
+    // Surfaced to the customer in the app alongside the return.
+    note String?
+
+    // Set when the return is refunded. Kept on the return (not just the payment)
+    // so partial refunds across several returns on one order stay attributable.
+    refundAmount Decimal?
+
     orderItem OrderItem @relation(fields: [orderItemId], references: [id])
     createdAt DateTime  @default(now())
+    // Defaulted as well as @updatedAt so `db push` can backfill any existing row.
+    updatedAt DateTime  @default(now()) @updatedAt
+
+    @@index([orderItemId])
+    @@index([status])
 }

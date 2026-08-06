@@ -1,6 +1,7 @@
 import { PrismaService } from "../../core/services/index.js";
 import { NotFoundError, ForbiddenError, BadRequestError } from "../../core/errors/http-errors.js";
-import { RoadRushService } from "../logistics/roadrush.service.js";
+import { RoadRushService, type RoadRushStatusDetail } from "../logistics/roadrush.service.js";
+import { mapRoadRushStatus } from "../logistics/roadrush-status.js";
 import { CouponService } from "../coupon/coupon.service.js";
 import { NotificationService } from "../notification/notification.service.js";
 import { logger } from "../../config/logger.js";
@@ -26,6 +27,11 @@ export class OrderService {
                                 images: true,
                             },
                         },
+                        // Lets the app flag "return in progress" on the order card
+                        // without a second request per order.
+                        returns: {
+                            orderBy: { createdAt: "desc" },
+                        },
                     },
                 },
                 address: true,
@@ -45,6 +51,9 @@ export class OrderService {
                             include: {
                                 images: true,
                             },
+                        },
+                        returns: {
+                            orderBy: { createdAt: "desc" },
                         },
                     },
                 },
@@ -222,36 +231,47 @@ export class OrderService {
         //    response immediately after the DB transaction. Cart is only cleared
         //    inside the transaction above, so if the transaction failed the cart
         //    is always preserved. The logistics sync happens in the background.
-        this.roadRush.placeOrder({
-            marcent_pickup_address_id: 17,
-            aggregator: data.aggregator || "pathao",
-            receiver_division: address.division,
-            receiver_district: address.district,
-            receiver_thana: address.thana,
-            drop_address: address.dropAddress || address.street,
-            customer_full_name: customerFullName,
-            customer_mobile_number: customerPhone,
-            item_value: totalAmount,
-            cod: data.paymentMethod === "COD",
-            item_details: itemDetails,
-        }).then(async (rrResponse) => {
-            if (rrResponse.status === "success" && rrResponse.order_code) {
-                await this.prisma.getClient().order.update({
-                    where: { id: order.id },
-                    data: { orderCode: rrResponse.order_code },
+        void (async () => {
+            try {
+                const pickupAddressId = await this.roadRush.getPickupAddressId();
+
+                const rrResponse = await this.roadRush.placeOrder({
+                    marcent_pickup_address_id: pickupAddressId,
+                    // `aggregator` is optional — RoadRush assigns one internally
+                    // when it is omitted. Only forward an explicit preference.
+                    ...(data.aggregator && { aggregator: data.aggregator }),
+                    receiver_division: address.division,
+                    receiver_district: address.district,
+                    receiver_thana: address.thana,
+                    drop_address: address.dropAddress || address.street,
+                    customer_full_name: customerFullName,
+                    customer_mobile_number: customerPhone,
+                    item_value: totalAmount,
+                    cod: data.paymentMethod === "COD",
+                    item_details: itemDetails,
                 });
-            } else if (rrResponse.status === "success") {
-                logger.warn("RoadRush order placed but order_code was missing in response", {
+
+                if (rrResponse.status === "success" && rrResponse.order_code) {
+                    await this.prisma.getClient().order.update({
+                        where: { id: order.id },
+                        data: {
+                            orderCode: rrResponse.order_code,
+                            merchantPickupAddressId: String(pickupAddressId),
+                        },
+                    });
+                } else if (rrResponse.status === "success") {
+                    logger.warn("RoadRush order placed but order_code was missing in response", {
+                        orderId: order.id,
+                        response: rrResponse,
+                    });
+                }
+            } catch (error) {
+                logger.error("Failed to sync order with RoadRush logistics", {
                     orderId: order.id,
-                    response: rrResponse,
+                    error: error instanceof Error ? error.message : String(error),
                 });
             }
-        }).catch((error) => {
-            logger.error("Failed to sync order with RoadRush logistics", {
-                orderId: order.id,
-                error: error instanceof Error ? error.message : String(error),
-            });
-        });
+        })();
 
         return order;
     }
@@ -307,8 +327,9 @@ export class OrderService {
         if (params?.fulfillmentStatus && params.fulfillmentStatus !== "all") {
             const statusMap: Record<string, OrderStatus | OrderStatus[]> = {
                 fulfilled: "delivered" as OrderStatus,
-                unfulfilled: ["pending", "cancelled"] as OrderStatus[],
+                unfulfilled: ["pending", "cancelled", "returned"] as OrderStatus[],
                 processing: ["processing", "shipped"] as OrderStatus[],
+                returned: "returned" as OrderStatus,
             };
             const mapped = statusMap[params.fulfillmentStatus.toLowerCase()];
             if (mapped) {
@@ -331,6 +352,9 @@ export class OrderService {
                     include: {
                         product: true,
                         variant: true,
+                        returns: {
+                            orderBy: { createdAt: "desc" },
+                        },
                     },
                 },
                 address: true,
@@ -378,12 +402,21 @@ export class OrderService {
             throw new NotFoundError("Payment record not found for this order");
         }
 
-        const finalStatus = status === "completed" ? "success" : status;
+        // "completed" is what the dashboard's Confirm Payment button sends.
+        const finalStatus = status === "completed" ? "success" : String(status ?? "").toLowerCase();
+
+        // Validate against the enum before handing it to Prisma — an unknown value
+        // used to surface as an opaque 500 instead of a useful 400.
+        if (!Object.values(PaymentStatus).includes(finalStatus as PaymentStatus)) {
+            throw new BadRequestError(
+                `Invalid payment status "${status}". Expected one of: ${Object.values(PaymentStatus).join(", ")}`
+            );
+        }
 
         return await this.prisma.getClient().payment.update({
             where: { id: payment.id },
             data: {
-                status: finalStatus as any,
+                status: finalStatus as PaymentStatus,
             },
         });
     }
@@ -404,9 +437,12 @@ export class OrderService {
         const customerPhone =
             order.address.user.phone || order.customerMobileNumber || "Not Provided";
 
+        const pickupAddressId = await this.roadRush.getPickupAddressId();
+
         const rrResponse = await this.roadRush.placeOrder({
-            marcent_pickup_address_id: 17,
-            aggregator: order.aggregator || "pathao",
+            marcent_pickup_address_id: pickupAddressId,
+            // Optional — omitted so RoadRush picks the aggregator internally.
+            ...(order.aggregator && { aggregator: order.aggregator }),
             receiver_division: order.receiverDivision,
             receiver_district: order.receiverDistrict,
             receiver_thana: order.receiverThana,
@@ -424,6 +460,7 @@ export class OrderService {
                 where: { id: order.id },
                 data: {
                     orderCode: rrResponse.order_code,
+                    merchantPickupAddressId: String(pickupAddressId),
                     customerFullName: customerFullName,
                     customerMobileNumber: customerPhone,
                     customerEmail:
@@ -445,70 +482,155 @@ export class OrderService {
             throw new BadRequestError("Order has not been synced with RoadRush yet");
 
         const rrResponse = await this.roadRush.getOrderDetails(order.orderCode);
-        console.log(
-            "REFRESH_ORDER_STATUS: Raw RoadRush response:",
-            JSON.stringify(rrResponse, null, 2)
-        );
         logger.info("RoadRush order_details response", { orderId, response: rrResponse });
 
-        if (rrResponse.status === "success") {
-            // RoadRush might return it as .order or .order_details depending on version
-            const rrOrder = (rrResponse as any).order || (rrResponse as any).order_details;
-
-            // The field name is actually 'status' in the response log, not 'order_status'
-            const newStatus = rrOrder?.status || rrOrder?.order_status;
-
-            if (newStatus) {
-                // Map RoadRush status to our OrderStatus enum
-                // RoadRush: Order Place, Processing, Shipped, Delivered, Cancelled
-                let ourStatus: any = order.status;
-                const normalizedStatus = newStatus.toLowerCase();
-
-                if (normalizedStatus.includes("place")) ourStatus = "pending";
-                else if (normalizedStatus.includes("processing")) ourStatus = "processing";
-                else if (normalizedStatus.includes("shipped")) ourStatus = "shipped";
-                else if (normalizedStatus.includes("picked")) ourStatus = "shipped";
-                else if (normalizedStatus.includes("delivered")) ourStatus = "delivered";
-                else if (normalizedStatus.includes("cancelled")) ourStatus = "cancelled";
-                else if (normalizedStatus.includes("failed")) ourStatus = "cancelled";
-
-                // Update order and set sync time
-                const updated = await this.prisma.getClient().order.update({
-                    where: { id: orderId },
-                    data: {
-                        status: ourStatus,
-                        lastLogisticsSync: new Date(),
-                        // Backfill missing details from RoadRush if available
-                        customerFullName: order.customerFullName || rrOrder?.customer_full_name,
-                        customerMobileNumber:
-                            order.customerMobileNumber || rrOrder?.customer_mobile_number,
-                        customerEmail:
-                            order.customerEmail ||
-                            rrOrder?.customer_email ||
-                            (order as any).user?.email,
-                    },
-                });
-
-                // Only notify the customer when the status genuinely changed.
-                if (ourStatus !== order.status) {
-                    await this.notificationService.notifyOrderStatusChange({
-                        userId: updated.userId,
-                        orderId: updated.id,
-                        orderCode: updated.orderCode,
-                        status: ourStatus,
-                        itemDetails: updated.itemDetails,
-                    });
-                }
-
-                return updated;
-            } else {
-                logger.warn("RoadRush refresh returned success but no order_status was found", {
-                    orderId,
-                    response: rrResponse,
-                });
-            }
+        if (rrResponse.status !== "success") {
+            throw new Error(
+                "Failed to refresh status from RoadRush: " + JSON.stringify(rrResponse)
+            );
         }
 
-        throw new Error("Failed to refresh status from RoadRush: " + JSON.stringify(rrResponse));
+        // RoadRush might return it as .order or .order_details depending on version
+        const rrOrder = rrResponse.order || rrResponse.order_details;
+        const statusName = rrOrder?.status;
+
+        if (!rrOrder || !statusName) {
+            logger.warn("RoadRush refresh returned success but no status was found", {
+                orderId,
+                response: rrResponse,
+            });
+            throw new Error(
+                "Failed to refresh status from RoadRush: " + JSON.stringify(rrResponse)
+            );
+        }
+
+        // Map the partner status name onto our enum. Unknown names keep the
+        // current status rather than guessing — see roadrush-status.ts.
+        const mapped = mapRoadRushStatus(statusName);
+        if (!mapped) {
+            logger.warn("Unrecognised RoadRush status name — keeping current order status", {
+                orderId,
+                statusName,
+            });
+        }
+        const ourStatus: OrderStatus = mapped ? mapped.status : order.status;
+
+        // Update order, mirror the logistics/COD figures, and set sync time.
+        // NOTE: payment status is deliberately left untouched. `cod: true` only
+        // tells the rider to collect cash — RoadRush exposes the amount due
+        // (Cash_Collect) but no "collected" flag — so COD reconciliation stays
+        // a manual admin action.
+        const updated = await this.prisma.getClient().order.update({
+            where: { id: orderId },
+            data: {
+                status: ourStatus,
+                logisticsStatusName: statusName,
+                lastLogisticsSync: new Date(),
+
+                // Logistics & COD figures reported by RoadRush
+                ...(rrOrder.Cash_Collect !== undefined && {
+                    cashCollectAmount: rrOrder.Cash_Collect,
+                }),
+                ...(rrOrder.Fee !== undefined && { deliveryFee: rrOrder.Fee }),
+                ...(rrOrder.COD_charge !== undefined && { codCharge: rrOrder.COD_charge }),
+                ...(rrOrder.Vat !== undefined && { vat: rrOrder.Vat }),
+                ...(rrOrder.Tax !== undefined && { tax: rrOrder.Tax }),
+                ...(rrOrder.distance_km !== undefined && { distanceKm: rrOrder.distance_km }),
+                ...(rrOrder.delivery_priority && {
+                    deliveryPriority: rrOrder.delivery_priority,
+                }),
+                ...(rrOrder.otp && { otp: rrOrder.otp }),
+                ...(rrOrder.rcv_pay !== undefined && { rcvPay: rrOrder.rcv_pay }),
+                ...(rrOrder.RequestDeliveryDate && {
+                    requestDeliveryDate: rrOrder.RequestDeliveryDate,
+                }),
+
+                // Backfill missing details from RoadRush if available
+                ...(!order.customerFullName &&
+                    rrOrder.customer_full_name && {
+                        customerFullName: rrOrder.customer_full_name,
+                    }),
+                ...(!order.customerMobileNumber &&
+                    rrOrder.customer_mobile_number && {
+                        customerMobileNumber: rrOrder.customer_mobile_number,
+                    }),
+                ...(!order.customerEmail &&
+                    rrOrder.customer_email && { customerEmail: rrOrder.customer_email }),
+            },
+        });
+
+        // Mirror the partner's status history into our own timeline.
+        await this.syncStatusHistory(orderId, rrOrder.status_details);
+
+        // Only notify the customer when the status genuinely changed.
+        if (ourStatus !== order.status) {
+            await this.notificationService.notifyOrderStatusChange({
+                userId: updated.userId,
+                orderId: updated.id,
+                orderCode: updated.orderCode,
+                status: ourStatus,
+                itemDetails: updated.itemDetails,
+            });
+        }
+
+        return updated;
+    }
+
+    /**
+     * Mirror RoadRush's `status_details` array into OrderStatusLog.
+     * Entries already stored (same partner status name + timestamp) are skipped,
+     * so this is safe to run on every refresh.
+     */
+    private async syncStatusHistory(
+        orderId: string,
+        statusDetails?: RoadRushStatusDetail[]
+    ): Promise<void> {
+        if (!statusDetails?.length) return;
+
+        const existing = await this.prisma.getClient().orderStatusLog.findMany({
+            where: { orderId, logisticsStatusName: { not: null } },
+            select: { logisticsStatusName: true, createdAt: true },
+        });
+
+        const seen = new Set(
+            existing.map((log) => `${log.logisticsStatusName}|${log.createdAt.toISOString()}`)
+        );
+
+        const rows = statusDetails.flatMap((detail) => {
+            const mapped = mapRoadRushStatus(detail.status_name);
+            if (!mapped) {
+                logger.warn("Skipping unrecognised RoadRush status in history", {
+                    orderId,
+                    statusName: detail.status_name,
+                });
+                return [];
+            }
+
+            const createdAt = new Date(detail.Created_at);
+            if (Number.isNaN(createdAt.getTime())) {
+                logger.warn("Skipping RoadRush history entry with an invalid timestamp", {
+                    orderId,
+                    createdAt: detail.Created_at,
+                });
+                return [];
+            }
+
+            if (seen.has(`${detail.status_name}|${createdAt.toISOString()}`)) return [];
+            seen.add(`${detail.status_name}|${createdAt.toISOString()}`);
+
+            return [
+                {
+                    orderId,
+                    status: mapped.status,
+                    logisticsStatusName: detail.status_name,
+                    note: detail.Description || null,
+                    createdAt,
+                },
+            ];
+        });
+
+        if (rows.length) {
+            await this.prisma.getClient().orderStatusLog.createMany({ data: rows });
+        }
     }
 }

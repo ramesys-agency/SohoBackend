@@ -242,6 +242,10 @@ export class NotificationService {
                 title: "Order cancelled",
                 body: `Your order #${reference} has been cancelled.`,
             },
+            returned: {
+                title: "Order returned",
+                body: `Your order #${reference} is being returned. Our team will be in touch.`,
+            },
         };
 
         const message = messages[params.status] ?? {

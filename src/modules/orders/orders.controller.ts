@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import { BadRequestError } from "../../core/errors/http-errors.js";
 import { OrderService } from "./orders.service.js";
+import { orderStatusPoller } from "./orders.poller.js";
 
 export class OrderController {
     private orderService = new OrderService();
@@ -139,6 +140,25 @@ export class OrderController {
             res.status(200).json({
                 message: "Order status refreshed successfully",
                 data: order,
+            });
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    /**
+     * Sweep all in-flight orders for status changes.
+     * The in-process poller does this on an interval; this endpoint exists so an
+     * external cron can drive it on hosts that suspend idle processes.
+     */
+    pollOrderStatuses = async (_req: Request, res: Response, next: NextFunction) => {
+        try {
+            const result = await orderStatusPoller.runOnce();
+            res.status(200).json({
+                message: result.skipped
+                    ? "Poll skipped — another run is already in progress"
+                    : "Order statuses polled successfully",
+                data: result,
             });
         } catch (error) {
             next(error);

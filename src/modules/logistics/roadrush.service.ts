@@ -3,6 +3,71 @@ import { logger } from "../../config/logger.js";
 import { redis } from "../../config/redis.js";
 
 /**
+ * A single entry from `order_details` -> `status_details`.
+ * Note the inconsistent key casing — it mirrors the API exactly.
+ */
+export interface RoadRushStatusDetail {
+    status_name: string;
+    Description?: string;
+    Created_at: string;
+    Created_by?: number;
+}
+
+/**
+ * The `order` object returned by `order_details`.
+ * Key casing mirrors the API verbatim (`Cash_Collect`, `Fee`, `COD_charge`, ...).
+ */
+export interface RoadRushOrderDetails {
+    id: number;
+    order_code: string;
+    status: string;
+    customer_full_name?: string;
+    customer_mobile_number?: string;
+    customer_email?: string;
+    drop_address?: string;
+    item_value?: number;
+    cod?: boolean;
+    item_details?: string;
+    receiver_division?: string;
+    receiver_district?: string;
+    receiver_thana?: string;
+    Cash_Collect?: number;
+    distance_km?: number;
+    Fee?: number;
+    COD_charge?: number;
+    Vat?: number;
+    Tax?: number;
+    created?: string;
+    updated?: string;
+    delivery_priority?: string;
+    Dop_Note?: string;
+    otp?: string;
+    rcv_pay?: boolean;
+    RequestDeliveryDate?: string;
+    status_details?: RoadRushStatusDetail[];
+    comments?: unknown[];
+}
+
+export interface RoadRushSenderAddress {
+    id: number;
+    name: string;
+    address: string;
+    division?: string;
+    district?: string;
+    thana?: string;
+    sender_full_name?: string;
+    sender_phone_number?: string;
+    [key: string]: unknown;
+}
+
+export interface RoadRushOrderDetailsResponse {
+    status: string;
+    order?: RoadRushOrderDetails;
+    /** Older/alternate response shape — kept as a fallback. */
+    order_details?: RoadRushOrderDetails;
+}
+
+/**
  * RoadRush Service for external API communication
  * Handles authentication, location data, and order placement.
  */
@@ -10,11 +75,13 @@ export class RoadRushService {
     private readonly baseUrl: string;
     private readonly username?: string | undefined;
     private readonly password?: string | undefined;
+    private readonly pickupAddressId?: number | undefined;
 
     constructor() {
         this.baseUrl = config.logistics.baseUrl;
         this.username = config.logistics.username;
         this.password = config.logistics.password;
+        this.pickupAddressId = config.logistics.pickupAddressId;
     }
 
     /**
@@ -126,7 +193,65 @@ export class RoadRushService {
     // --- Addresses ---
 
     async getSenderAddresses() {
-        return this.request<{ status: string; sender_addresses: any[] }>("/sender-address/");
+        return this.request<{
+            status: string;
+            count?: number;
+            sender_addresses: RoadRushSenderAddress[];
+        }>("/sender-address/");
+    }
+
+    /**
+     * Resolve the merchant pickup address id to send as `marcent_pickup_address_id`.
+     *
+     * Prefers the configured id; when unset, falls back to the first sender
+     * address registered on the RoadRush account (cached, since it effectively
+     * never changes). Set ROADRUSH_PICKUP_ADDRESS_ID once the account has more
+     * than one pickup address, otherwise the fallback choice is arbitrary.
+     */
+    async getPickupAddressId(): Promise<number> {
+        if (this.pickupAddressId) return this.pickupAddressId;
+
+        const cacheKey = "logistics:roadrush:pickup-address-id";
+
+        if (config.redis.enabled) {
+            try {
+                const cached = await redis.get<number>(cacheKey);
+                if (cached) return cached;
+            } catch (error) {
+                logger.warn("Failed to get RoadRush pickup address id from redis", {
+                    error: error instanceof Error ? error.message : String(error),
+                });
+            }
+        }
+
+        const { sender_addresses: addresses } = await this.getSenderAddresses();
+
+        if (!addresses?.length) {
+            throw new Error(
+                "No RoadRush pickup address is registered for this account — add one, or set ROADRUSH_PICKUP_ADDRESS_ID"
+            );
+        }
+
+        if (addresses.length > 1) {
+            logger.warn(
+                "RoadRush account has multiple pickup addresses; using the first. Set ROADRUSH_PICKUP_ADDRESS_ID to pin one.",
+                { ids: addresses.map((a) => a.id) }
+            );
+        }
+
+        const id = addresses[0]!.id;
+
+        if (config.redis.enabled) {
+            try {
+                await redis.set(cacheKey, id, { ttl: 86400 });
+            } catch (error) {
+                logger.warn("Failed to cache RoadRush pickup address id", {
+                    error: error instanceof Error ? error.message : String(error),
+                });
+            }
+        }
+
+        return id;
     }
 
     async addPickupAddress(data: any) {
@@ -154,7 +279,7 @@ export class RoadRushService {
     }
 
     async getOrderDetails(orderCode: string) {
-        return this.request<{ status: string; order?: any; order_details?: any }>("/order_details/", {
+        return this.request<RoadRushOrderDetailsResponse>("/order_details/", {
             method: "POST",
             body: JSON.stringify({ order_code: orderCode }),
         });

@@ -71,6 +71,20 @@ const envSchema = z.object({
     ROADRUSH_BASE_URL: z.string().url().default("https://www.roadrush.xyz/api/customer"),
     ROADRUSH_USERNAME: z.string().optional(),
     ROADRUSH_PASSWORD: z.string().optional(),
+    // Merchant pickup (sender) address id on RoadRush. Leave unset to resolve it
+    // automatically from the account's sender-address list.
+    ROADRUSH_PICKUP_ADDRESS_ID: z.preprocess(
+        (v) => (v === "" ? undefined : v),
+        z.coerce.number().int().positive().optional()
+    ),
+    // Background polling for RoadRush status changes (they have no webhook).
+    // Disable if an external cron drives /orders/admin/poll-statuses instead.
+    ORDER_STATUS_POLL_ENABLED: z
+        .string()
+        .default("true")
+        .transform((v) => v === "true"),
+    ORDER_STATUS_POLL_INTERVAL_MINUTES: z.coerce.number().int().positive().default(15),
+    ORDER_STATUS_POLL_BATCH_SIZE: z.coerce.number().int().positive().default(50),
 
     // License
     LICENSE_KEY: z.string().optional(),
