@@ -131,7 +131,7 @@ export class AuthService {
             where: { email },
         });
 
-        if (!user || !user.passwordHash) {
+        if (!user || user.isDeleted || !user.passwordHash) {
             throw new UnauthorizedError("Invalid email or password");
         }
 
@@ -213,6 +213,10 @@ export class AuthService {
                 where: { email },
             });
 
+            if (user?.isDeleted) {
+                throw new UnauthorizedError("This account has been deleted");
+            }
+
             if (!user) {
                 // User doesn't exist, create a new one
                 user = await this.prisma.user.create({
@@ -293,6 +297,10 @@ export class AuthService {
             let user = await this.prisma.user.findUnique({
                 where: { email },
             });
+
+            if (user?.isDeleted) {
+                throw new UnauthorizedError("This account has been deleted");
+            }
 
             if (!user) {
                 // Determine full name
@@ -401,10 +409,11 @@ export class AuthService {
                 phone: true,
                 role: true,
                 avatar: true,
+                isDeleted: true,
             },
         });
 
-        if (!user || user.role !== role) {
+        if (!user || user.isDeleted || user.role !== role) {
             return null;
         }
 
@@ -430,7 +439,7 @@ export class AuthService {
             where: { email },
         });
 
-        if (!user) {
+        if (!user || user.isDeleted) {
             // Security: Don't reveal if user exists.
             // But for now, returning success even if user not found is best practice.
             // OR throwing specific error if internal policy allows.

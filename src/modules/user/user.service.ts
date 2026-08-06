@@ -1,7 +1,8 @@
 import { PrismaService } from "../../core/services/index.js";
 import { prisma } from "../../config/prisma.js";
 // import { AuthUtils } from "../auth/auth.utils.js";
-import { ConflictError } from "../../core/errors/index.js";
+import { ConflictError, NotFoundError } from "../../core/errors/index.js";
+import { authService } from "../../config/auth.js";
 
 export class UserService {
     private prisma: PrismaService = prisma;
@@ -146,14 +147,85 @@ export class UserService {
         };
     }
 
+    /**
+     * Deletes the user's account and personal data.
+     *
+     * Apple's App Store guideline 5.1.1(v) requires that deleting an account
+     * actually deletes it, not just hides it. A user with no orders is removed
+     * from the database outright.
+     *
+     * A user with orders keeps a stub row: `Order.userId` is a required foreign
+     * key, so removing the row would take the order history — a financial record
+     * — with it. Every identifying field on the user row is scrubbed and the
+     * email is freed for re-registration.
+     *
+     * Note what this deliberately does NOT erase: the delivery `Address` rows an
+     * order points at, and the `customerFullName` / `customerEmail` /
+     * `customerMobileNumber` / `dropAddress` snapshots on the order itself. They
+     * are retained as business records, and a COD parcel already with the courier
+     * still has to reach the customer. The privacy policy must disclose this
+     * retention.
+     */
     async deleteAccount(userId: string) {
-        return await this.prisma.getClient().user.update({
+        const db = this.prisma.getClient();
+
+        const user = await db.user.findUnique({
             where: { id: userId },
-            data: {
-                isDeleted: true,
-                deletedAt: new Date(),
-            },
+            select: { id: true, role: true, isDeleted: true },
         });
+
+        if (!user || user.isDeleted) {
+            throw new NotFoundError("User not found");
+        }
+
+        await db.$transaction(async (tx) => {
+            // Personal data with no business or legal reason to survive.
+            await tx.cartItem.deleteMany({ where: { userId } });
+            await tx.wishlist.deleteMany({ where: { userId } });
+            await tx.pushToken.deleteMany({ where: { userId } });
+            await tx.notification.deleteMany({ where: { userId } });
+            await tx.savedPaymentMethod.deleteMany({ where: { userId } });
+            await tx.review.deleteMany({ where: { userId } });
+
+            // Addresses that no order points at can go; the rest are part of the
+            // order record and are removed together with the user's last order.
+            await tx.address.deleteMany({
+                where: { userId, orders: { none: {} } },
+            });
+
+            const orderCount = await tx.order.count({ where: { userId } });
+
+            if (orderCount === 0) {
+                await tx.address.deleteMany({ where: { userId } });
+                await tx.user.delete({ where: { id: userId } });
+                return;
+            }
+
+            await tx.user.update({
+                where: { id: userId },
+                data: {
+                    // Unique + non-routable, so the real address can be reused
+                    // for a new signup and nothing can be mailed to this row.
+                    email: `deleted-${userId}@deleted.invalid`,
+                    fullName: "Deleted user",
+                    phone: null,
+                    passwordHash: null,
+                    authProviderId: null,
+                    avatar: null,
+                    age: null,
+                    gender: null,
+                    region: null,
+                    isVerified: false,
+                    isDeleted: true,
+                    deletedAt: new Date(),
+                },
+            });
+        });
+
+        // Sessions are cached; drop the entry so existing tokens stop resolving.
+        await authService.invalidateUserCache(userId, user.role);
+
+        return { deleted: true };
     }
 
     async createAdmin(data: {

@@ -92,10 +92,12 @@ export class AuthService implements IAuthService {
                 fullName: true,
                 phone: true,
                 role: true,
+                isDeleted: true,
             },
         });
 
-        if (!user) {
+        // A deleted account must not resolve, even if a valid token still exists.
+        if (!user || user.isDeleted) {
             return null;
         }
 
