@@ -1,5 +1,7 @@
 import { type Request, type Response, type NextFunction } from "express";
 import { NotificationService } from "./notification.service.js";
+import { pushJobService } from "./push-job.service.js";
+import { pushJobWorker } from "./push-job.worker.js";
 import type { AdminSendNotificationDto, RegisterPushTokenDto } from "./notification.types.js";
 
 export class NotificationController {
@@ -136,6 +138,64 @@ export class NotificationController {
             res.status(201).json({
                 message: `Notification sent to ${result.sent} user(s)`,
                 data: result,
+            });
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    // ---- Admin: push queue ----
+
+    /** Queue depth, 24h delivery outcome and device counts per platform. */
+    pushStats = async (_req: Request, res: Response, next: NextFunction) => {
+        try {
+            const data = await pushJobService.getStats();
+            res.status(200).json({ message: "Push queue stats fetched successfully", data });
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    /**
+     * Drain the queue now. Lets an external cron drive delivery on hosts that
+     * suspend idle processes, and gives support a way to flush a backlog.
+     */
+    pushDrain = async (_req: Request, res: Response, next: NextFunction) => {
+        try {
+            const data = await pushJobWorker.runOnce();
+            res.status(200).json({ message: "Push queue drained", data });
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    /**
+     * Send a test push immediately and report Expo's verdict per device, so
+     * iOS and Android delivery can be proven separately.
+     */
+    pushTest = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { userId, title, body } = req.body as {
+                userId?: string;
+                title?: string;
+                body?: string;
+            };
+
+            // Defaults to the admin's own devices, which is the common case when
+            // checking that a build's credentials work.
+            const target = userId || req.user?.id;
+            if (!target) {
+                res.status(400).json({ message: "userId is required" });
+                return;
+            }
+
+            const data = await pushJobService.sendTestNow(target, title, body);
+
+            res.status(200).json({
+                message: data.devices
+                    ? `Test push sent to ${data.devices} device(s)`
+                    : "This user has no registered devices",
+                data,
             });
         } catch (error) {
             next(error);

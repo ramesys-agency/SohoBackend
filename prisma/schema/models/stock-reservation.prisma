@@ -1,0 +1,35 @@
+/// A short-lived hold on stock taken when a customer enters checkout.
+///
+/// Reservations never touch `ProductVariant.stockQty` — they are a soft overlay
+/// on top of it, so an expired hold is a pure no-op and the admin inventory
+/// number keeps meaning "units we own". Only order placement decrements stock.
+model StockReservation {
+    id String @id @default(uuid())
+
+    /// Groups every line of one checkout session so the whole basket is
+    /// reserved, renewed and released as a unit.
+    checkoutId String
+
+    variantId String
+    userId    String
+    quantity  Int
+
+    status    ReservationStatus @default(active)
+    expiresAt DateTime
+
+    /// Set when the hold is turned into real order lines.
+    orderId String?
+
+    variant ProductVariant @relation(fields: [variantId], references: [id])
+    user    User           @relation(fields: [userId], references: [id])
+    order   Order?         @relation(fields: [orderId], references: [id])
+
+    createdAt DateTime @default(now())
+    // Defaulted as well as @updatedAt so `db push` can backfill existing rows.
+    updatedAt DateTime @default(now()) @updatedAt
+
+    // Availability queries filter on exactly this triplet.
+    @@index([variantId, status, expiresAt])
+    @@index([checkoutId])
+    @@index([userId, status])
+}

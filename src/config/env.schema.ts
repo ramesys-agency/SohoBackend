@@ -86,6 +86,88 @@ const envSchema = z.object({
     ORDER_STATUS_POLL_INTERVAL_MINUTES: z.coerce.number().int().positive().default(15),
     ORDER_STATUS_POLL_BATCH_SIZE: z.coerce.number().int().positive().default(50),
 
+    // Checkout stock reservation. Disabling only turns off the 5-minute hold —
+    // orders still decrement stock atomically and still refuse to oversell.
+    CHECKOUT_RESERVATION_ENABLED: z
+        .string()
+        .default("true")
+        .transform((v) => v === "true"),
+    CHECKOUT_RESERVATION_TTL_MINUTES: z.coerce.number().positive().default(5),
+    // Upper bound on how long one checkout may keep renewing its hold, so an
+    // app left open on the payment screen can't sit on stock indefinitely.
+    CHECKOUT_MAX_HOLD_MINUTES: z.coerce.number().positive().default(20),
+    RESERVATION_SWEEP_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
+
+    // Logistics retry queue. Delays are applied after the immediate attempt, so
+    // "5,30,120" means 1 immediate try + 3 retries at +5m, +30m and +2h.
+    LOGISTICS_JOB_ENABLED: z
+        .string()
+        .default("true")
+        .transform((v) => v === "true"),
+    LOGISTICS_JOB_POLL_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
+    LOGISTICS_JOB_BATCH_SIZE: z.coerce.number().int().positive().default(20),
+    LOGISTICS_RETRY_DELAYS_MINUTES: z
+        .string()
+        .default("5,30,120")
+        .transform((v) =>
+            v
+                .split(",")
+                .map((part) => Number(part.trim()))
+                .filter((n) => Number.isFinite(n) && n >= 0)
+        )
+        .refine((delays) => delays.length > 0, {
+            message: "LOGISTICS_RETRY_DELAYS_MINUTES must list at least one delay",
+        }),
+    // A job claimed by a process that then died is handed back after this long.
+    LOGISTICS_JOB_STALE_CLAIM_MINUTES: z.coerce.number().int().positive().default(10),
+
+    // Push notification queue. Delivery is queued rather than fired inline, so a
+    // phone that is offline, or an Expo outage, only delays a notification
+    // instead of losing it.
+    PUSH_JOB_ENABLED: z
+        .string()
+        .default("true")
+        .transform((v) => v === "true"),
+    PUSH_JOB_POLL_INTERVAL_SECONDS: z.coerce.number().int().positive().default(15),
+    PUSH_JOB_BATCH_SIZE: z.coerce.number().int().positive().default(20),
+    // Applied after the immediate attempt, so "1,5,30" means 1 try now plus
+    // retries at +1m, +5m and +30m.
+    PUSH_RETRY_DELAYS_MINUTES: z
+        .string()
+        .default("1,5,30")
+        .transform((v) =>
+            v
+                .split(",")
+                .map((part) => Number(part.trim()))
+                .filter((n) => Number.isFinite(n) && n >= 0)
+        )
+        .refine((delays) => delays.length > 0, {
+            message: "PUSH_RETRY_DELAYS_MINUTES must list at least one delay",
+        }),
+    PUSH_JOB_STALE_CLAIM_MINUTES: z.coerce.number().int().positive().default(10),
+    // Expo only has receipts a few minutes after accepting a push. Polling
+    // earlier just returns "not ready yet".
+    PUSH_RECEIPT_DELAY_MINUTES: z.coerce.number().int().positive().default(15),
+    // How long Expo/FCM/APNs should hold a message for a device that is offline.
+    // This is what makes a push survive "mobile data was turned off". Default 7d.
+    PUSH_TTL_SECONDS: z.coerce.number().int().positive().default(604800),
+    // Optional but recommended by Expo — required once push security is enabled
+    // on the project, and it lifts the anonymous rate limit.
+    EXPO_ACCESS_TOKEN: z.string().optional(),
+    // Delivered/failed jobs are kept this long for auditing, then swept.
+    PUSH_JOB_RETENTION_DAYS: z.coerce.number().int().positive().default(14),
+
+    // Who to email when an order falls back to manual shipping (comma separated).
+    ADMIN_ALERT_EMAILS: z
+        .string()
+        .optional()
+        .transform((v) =>
+            (v ?? "")
+                .split(",")
+                .map((email) => email.trim())
+                .filter(Boolean)
+        ),
+
     // License
     LICENSE_KEY: z.string().optional(),
     LICENSE_SERVICE_URL: z.string().url().optional(),

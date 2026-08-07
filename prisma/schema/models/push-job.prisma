@@ -1,0 +1,72 @@
+/// A durable "deliver this push to these devices" task.
+///
+/// Push used to be fired inline and its failure swallowed, so a flaky Expo call,
+/// a process restart mid-broadcast, or a phone that was simply offline all ended
+/// the same way: the notification silently never arrived. The in-app notification
+/// row is still written synchronously; the device delivery happens here, where it
+/// can fail, wait, and try again.
+///
+/// One row is one Expo chunk (Expo accepts at most 100 tokens per request), so a
+/// broadcast to 50k devices becomes ~500 independently retryable rows rather than
+/// one all-or-nothing send.
+model PushJob {
+    id String @id @default(uuid())
+
+    /// Groups every chunk expanded from the same logical send, so an admin
+    /// broadcast can be reported on as a whole.
+    dispatchId String
+    type       NotificationType @default(general)
+
+    title String
+    body  String
+    data  Json?
+
+    /// The Expo push tokens this chunk targets. Frozen at enqueue time: a token
+    /// deleted later just fails its receipt, which is what prunes it.
+    tokens String[]
+
+    /// Accepted tickets as [{ token, ticketId }]. Written when Expo takes the
+    /// chunk, read back when receipts are polled to map a failure to the exact
+    /// device that must be pruned.
+    tickets Json?
+
+    /// Delivery hints. `high` priority is what wakes an Android device out of
+    /// doze, and the TTL is what lets Expo/FCM hold the message for a phone that
+    /// is offline right now instead of dropping it.
+    priority   String  @default("high")
+    ttlSeconds Int     @default(604800)
+    channelId  String  @default("default")
+    /// iOS app-icon badge. Only set for single-recipient sends, where one number
+    /// is meaningful.
+    badge      Int?
+
+    status      PushJobStatus @default(pending)
+    attempts    Int           @default(0)
+    /// 1 immediate attempt + one per configured retry delay.
+    maxAttempts Int           @default(4)
+    nextRunAt   DateTime      @default(now())
+
+    /// When the receipt poll becomes due. Expo needs a few minutes before
+    /// receipts exist, so this is deliberately not `nextRunAt`.
+    receiptCheckAt DateTime?
+
+    lastError   String?
+    lastAttempt DateTime?
+
+    /// Claim fields — how a worker takes exclusive ownership of a job without
+    /// depending on Redis being up.
+    lockedAt DateTime?
+    lockedBy String?
+
+    /// Per-device outcome, filled in once receipts land.
+    delivered Int @default(0)
+    failed    Int @default(0)
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @default(now()) @updatedAt
+
+    @@index([status, nextRunAt])
+    @@index([status, receiptCheckAt])
+    @@index([dispatchId])
+    @@index([createdAt])
+}

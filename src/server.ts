@@ -8,6 +8,9 @@ import { redis } from "./config/redis.js";
 // Core
 import { ShutdownManager, verifyLicense, startLicenseHeartbeat } from "./core/utils/index.js";
 import { orderStatusPoller } from "./modules/orders/orders.poller.js";
+import { reservationSweeper } from "./modules/checkout/reservation.sweeper.js";
+import { logisticsJobWorker } from "./modules/logistics/logistics-job.worker.js";
+import { pushJobWorker } from "./modules/notification/push-job.worker.js";
 
 // Routes
 
@@ -84,10 +87,22 @@ async function bootstrap(): Promise<void> {
     // Poll RoadRush for order status changes (they provide no webhook)
     orderStatusPoller.start();
 
+    // Expire lapsed checkout stock holds
+    reservationSweeper.start();
+
+    // Retry handing orders to RoadRush when it was unreachable at checkout
+    logisticsJobWorker.start();
+
+    // Deliver queued push notifications and confirm them against Expo receipts
+    pushJobWorker.start();
+
     // Graceful shutdown
     const shutdown = new ShutdownManager();
     shutdown.register(() => app.shutdown());
     shutdown.register(async () => orderStatusPoller.stop());
+    shutdown.register(async () => reservationSweeper.stop());
+    shutdown.register(async () => logisticsJobWorker.stop());
+    shutdown.register(async () => pushJobWorker.stop());
 
     if (config.redis.enabled) {
         shutdown.register(() => redis.disconnect());

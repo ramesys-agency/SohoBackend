@@ -1,7 +1,13 @@
 export class HttpError extends Error {
     constructor(
         public statusCode: number,
-        message: string
+        message: string,
+        /**
+         * Optional machine-readable payload sent back as `data`. Used where the
+         * client has to act on the specifics of the failure — e.g. which cart
+         * lines ran out of stock, not just that something did.
+         */
+        public details?: unknown
     ) {
         super(message);
         this.name = "HttpError";
@@ -9,8 +15,8 @@ export class HttpError extends Error {
 }
 
 export class BadRequestError extends HttpError {
-    constructor(message = "Bad Request") {
-        super(400, message);
+    constructor(message = "Bad Request", details?: unknown) {
+        super(400, message, details);
     }
 }
 
@@ -33,8 +39,8 @@ export class NotFoundError extends HttpError {
 }
 
 export class ConflictError extends HttpError {
-    constructor(message: string = "Resource already exists") {
-        super(409, message);
+    constructor(message: string = "Resource already exists", details?: unknown) {
+        super(409, message, details);
     }
 }
 

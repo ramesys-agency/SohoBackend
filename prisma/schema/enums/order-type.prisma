@@ -1,0 +1,7 @@
+/// How an order is fulfilled. `manual_shipping` means every automated attempt to
+/// hand the order to the logistics partner failed and a human has to arrange the
+/// delivery — the admin dashboard surfaces these in their own section.
+enum OrderType {
+    standard
+    manual_shipping
+}

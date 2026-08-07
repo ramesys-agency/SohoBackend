@@ -47,9 +47,10 @@ model ProductVariant {
     originalPrice Decimal? // Will be shown as MRP
     isDefault     Boolean  @default(false)
 
-    cartItems  CartItem[]
-    orderItems OrderItem[]
-    inventory  InventoryLog[]
+    cartItems    CartItem[]
+    orderItems   OrderItem[]
+    inventory    InventoryLog[]
+    reservations StockReservation[]
     wishlists  Wishlist[]
     images     ProductVariantImage[]
 

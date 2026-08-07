@@ -1,13 +1,12 @@
 import { Expo } from "expo-server-sdk";
-import type { ExpoPushMessage } from "expo-server-sdk";
 import type { NotificationType, Prisma } from "@prisma/client";
 import { PrismaService } from "../../core/services/index.js";
 import { prisma } from "../../config/prisma.js";
 import { logger } from "../../config/logger.js";
 import { BadRequestError } from "../../core/errors/index.js";
+import { pushJobService } from "./push-job.service.js";
+import { pushJobWorker } from "./push-job.worker.js";
 import type { AdminSendNotificationDto, CreateNotificationDto, RegisterPushTokenDto } from "./notification.types.js";
-
-const expo = new Expo();
 
 export class NotificationService {
     private prisma: PrismaService = prisma;
@@ -78,65 +77,46 @@ export class NotificationService {
         return { success: true };
     }
 
-    // ---- Internal push delivery ----
-
-    private async sendPushToUsers(
-        userIds: string[],
-        title: string,
-        body: string,
-        data?: Record<string, unknown> | null
-    ) {
-        if (userIds.length === 0) return;
-
-        const rows = await this.prisma.getClient().pushToken.findMany({
-            where: { userId: { in: userIds } },
-            select: { token: true },
-        });
-
-        const tokens = rows
-            .map((r: { token: string }) => r.token)
-            .filter((t: string) => Expo.isExpoPushToken(t));
-
-        if (tokens.length === 0) return;
-
-        const messages: ExpoPushMessage[] = tokens.map((token: string) => ({
-            to: token,
-            sound: "default" as const,
-            title,
-            body,
-            data: (data ?? {}) as Record<string, unknown>,
-        }));
-
-        const chunks = expo.chunkPushNotifications(messages);
-        for (const chunk of chunks) {
-            try {
-                await expo.sendPushNotificationsAsync(chunk);
-            } catch (error) {
-                logger.warn("Push notification delivery failed", {
-                    error: error instanceof Error ? error.message : String(error),
-                });
-            }
-        }
-    }
-
     // ---- Core notification creation ----
 
     async createForUser(dto: CreateNotificationDto) {
         try {
-            const notification = await this.prisma.getClient().notification.create({
-                data: {
-                    userId: dto.userId,
+            const notification = await this.prisma.getClient().$transaction(async (tx) => {
+                const created = await tx.notification.create({
+                    data: {
+                        userId: dto.userId,
+                        title: dto.title,
+                        body: dto.body,
+                        type: dto.type ?? "general",
+                        ...(dto.data != null
+                            ? { data: dto.data as Prisma.InputJsonValue }
+                            : {}),
+                    },
+                });
+
+                // Queued in the same transaction as the notification row: an
+                // in-app notification can never exist without its delivery job,
+                // and a rolled-back notification never pushes.
+                const unread = await tx.notification.count({
+                    where: { userId: dto.userId, isRead: false },
+                });
+
+                await pushJobService.enqueue({
+                    tx,
+                    userIds: [dto.userId],
                     title: dto.title,
                     body: dto.body,
-                    type: dto.type ?? "general",
-                    ...(dto.data != null
-                        ? { data: dto.data as Prisma.InputJsonValue }
-                        : {}),
-                },
+                    ...(dto.data != null ? { data: dto.data } : {}),
+                    ...(dto.type ? { type: dto.type } : {}),
+                    badge: unread,
+                });
+
+                return created;
             });
 
-            // Fire-and-forget — push failure must not break the parent operation
-            this.sendPushToUsers([dto.userId], dto.title, dto.body, dto.data).catch(() => {});
+            // Deliver now rather than on the next poll tick. Failure here is
+            // irrelevant — the job is committed and the worker will pick it up.
+            pushJobWorker.kick();
 
             return notification;
         } catch (error) {
@@ -180,7 +160,11 @@ export class NotificationService {
         });
 
         if (recipients.length === 0) {
-            return { sent: 0, recipients: 0 };
+            return {
+                sent: 0,
+                recipients: 0,
+                push: { queued: false, devices: 0, jobs: 0, dispatchId: null },
+            };
         }
 
         const type: NotificationType = dto.type ?? "general";
@@ -197,20 +181,42 @@ export class NotificationService {
             })),
         });
 
+        // Queue push delivery (skip if admin opted for in-app only). The admin
+        // request returns as soon as the jobs are written — a broadcast to
+        // thousands of devices is drained by the worker, not by this request.
+        let queued = { dispatchId: "", jobs: 0, tokens: 0 };
+
+        if (dto.pushEnabled !== false) {
+            queued = await pushJobService.enqueue({
+                userIds: recipients.map((u: { id: string }) => u.id),
+                title: dto.title.trim(),
+                body: dto.body.trim(),
+                ...(dto.data != null ? { data: dto.data } : {}),
+                type,
+            });
+            pushJobWorker.kick();
+        }
+
         logger.info("Admin broadcast notification sent", {
             audience,
             recipients: recipients.length,
             sent: result.count,
             type,
+            dispatchId: queued.dispatchId || null,
+            pushJobs: queued.jobs,
+            devices: queued.tokens,
         });
 
-        // Fire-and-forget push delivery (skip if admin opted for in-app only)
-        if (dto.pushEnabled !== false) {
-            const recipientIds = recipients.map((u: { id: string }) => u.id);
-            this.sendPushToUsers(recipientIds, dto.title.trim(), dto.body.trim(), dto.data).catch(() => {});
-        }
-
-        return { sent: result.count, recipients: recipients.length };
+        return {
+            sent: result.count,
+            recipients: recipients.length,
+            push: {
+                queued: dto.pushEnabled !== false,
+                devices: queued.tokens,
+                jobs: queued.jobs,
+                dispatchId: queued.dispatchId || null,
+            },
+        };
     }
 
     async notifyOrderStatusChange(params: {

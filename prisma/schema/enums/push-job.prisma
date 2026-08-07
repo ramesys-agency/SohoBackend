@@ -1,0 +1,10 @@
+enum PushJobStatus {
+    pending
+    processing
+    /// Expo accepted the chunk and returned tickets. Delivery is not confirmed
+    /// yet — receipts only become available a few minutes later.
+    awaiting_receipt
+    succeeded
+    exhausted
+    cancelled
+}

@@ -17,3 +17,8 @@ notificationRoutes.delete("/push-token", authMiddleware, controller.removePushTo
 
 // Admin routes
 notificationRoutes.post("/admin/send", authMiddleware, adminMiddleware, controller.adminSend);
+
+// Admin: push delivery queue
+notificationRoutes.get("/admin/push/stats", authMiddleware, adminMiddleware, controller.pushStats);
+notificationRoutes.post("/admin/push/drain", authMiddleware, adminMiddleware, controller.pushDrain);
+notificationRoutes.post("/admin/push/test", authMiddleware, adminMiddleware, controller.pushTest);

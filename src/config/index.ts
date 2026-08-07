@@ -73,8 +73,35 @@ export const config = {
         pollEnabled: env.ORDER_STATUS_POLL_ENABLED,
         pollIntervalMinutes: env.ORDER_STATUS_POLL_INTERVAL_MINUTES,
         pollBatchSize: env.ORDER_STATUS_POLL_BATCH_SIZE,
+
+        job: {
+            enabled: env.LOGISTICS_JOB_ENABLED,
+            pollIntervalSeconds: env.LOGISTICS_JOB_POLL_INTERVAL_SECONDS,
+            batchSize: env.LOGISTICS_JOB_BATCH_SIZE,
+            retryDelaysMinutes: env.LOGISTICS_RETRY_DELAYS_MINUTES,
+            staleClaimMinutes: env.LOGISTICS_JOB_STALE_CLAIM_MINUTES,
+        },
     },
-    
+
+    push: {
+        enabled: env.PUSH_JOB_ENABLED,
+        pollIntervalSeconds: env.PUSH_JOB_POLL_INTERVAL_SECONDS,
+        batchSize: env.PUSH_JOB_BATCH_SIZE,
+        retryDelaysMinutes: env.PUSH_RETRY_DELAYS_MINUTES,
+        staleClaimMinutes: env.PUSH_JOB_STALE_CLAIM_MINUTES,
+        receiptDelayMinutes: env.PUSH_RECEIPT_DELAY_MINUTES,
+        ttlSeconds: env.PUSH_TTL_SECONDS,
+        accessToken: env.EXPO_ACCESS_TOKEN,
+        retentionDays: env.PUSH_JOB_RETENTION_DAYS,
+    },
+
+    checkout: {
+        reservationEnabled: env.CHECKOUT_RESERVATION_ENABLED,
+        reservationTtlMinutes: env.CHECKOUT_RESERVATION_TTL_MINUTES,
+        maxHoldMinutes: env.CHECKOUT_MAX_HOLD_MINUTES,
+        sweepIntervalSeconds: env.RESERVATION_SWEEP_INTERVAL_SECONDS,
+    },
+
     license: {
         key: env.LICENSE_KEY,
         serviceUrl: env.LICENSE_SERVICE_URL,
@@ -86,6 +113,7 @@ export const config = {
         user: env.SMTP_USER,
         pass: env.SMTP_PASS,
         from: env.SMTP_FROM,
+        adminAlertEmails: env.ADMIN_ALERT_EMAILS,
     },
 } as const;
 

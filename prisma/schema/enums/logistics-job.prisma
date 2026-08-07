@@ -1,0 +1,14 @@
+enum LogisticsJobStatus {
+    pending
+    processing
+    succeeded
+    /// Every attempt (initial + retries) failed. The order is flagged for manual
+    /// shipping when a job reaches this state.
+    exhausted
+    /// An admin synced the order by hand, so the queued attempt is no longer needed.
+    cancelled
+}
+
+enum LogisticsJobType {
+    place_order
+}

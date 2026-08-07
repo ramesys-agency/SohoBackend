@@ -11,6 +11,7 @@ import type {
 import type { IProductService } from "./product.interface.js";
 import { PrismaService } from "../../core/services/index.js";
 import { NotFoundError } from "../../core/errors/http-errors.js";
+import { CheckoutService } from "../checkout/checkout.service.js";
 import {
     getCategoryIds,
     getCollectionProductIds,
@@ -23,6 +24,17 @@ import {
 
 export class ProductService implements IProductService {
     private prisma: PrismaService = prisma;
+    private checkout: CheckoutService = new CheckoutService();
+
+    /**
+     * Units a shopper can actually buy right now: stock on hand minus every
+     * live checkout hold. One grouped query covers a whole response, so a
+     * product list costs one extra round trip, not one per variant.
+     */
+    private async getAvailability(variantIds: string[]): Promise<Map<string, number>> {
+        if (!variantIds.length) return new Map();
+        return await this.checkout.getReservedQuantities(this.prisma.getClient(), variantIds);
+    }
 
     async createProduct(data: CreateProductDto): Promise<any> {
         return await this.prisma.getClient().$transaction(async (tx) => {
@@ -127,6 +139,15 @@ export class ProductService implements IProductService {
         if (!product) {
             throw new NotFoundError("Product not found");
         }
+
+        // Units held by shoppers who are mid-checkout are not for sale, so the
+        // app sees them as gone rather than letting a customer start a checkout
+        // that is guaranteed to fail.
+        const reserved = await this.getAvailability(product.variants.map((v) => v.id));
+        product.variants = product.variants.map((v) => ({
+            ...v,
+            availableQty: Math.max(0, v.stockQty - (reserved.get(v.id) ?? 0)),
+        })) as typeof product.variants;
 
         if (userId) {
             const variantIds = product.variants.map((v) => v.id);
@@ -248,6 +269,13 @@ export class ProductService implements IProductService {
             products.length > 0
         );
 
+        // Live checkout holds make an item unavailable to everyone else.
+        const reserved = await this.getAvailability(
+            products.flatMap((p) => p.variants.map((v) => v.id))
+        );
+        const availableQty = (variant: { id: string; stockQty: number }) =>
+            variant.stockQty - (reserved.get(variant.id) ?? 0);
+
         let wishlistedVariantIds = new Set<string>();
         let cartVariantIds = new Set<string>();
         if (userId && products.length > 0) {
@@ -301,7 +329,7 @@ export class ProductService implements IProductService {
                 variantId: defaultVariant?.id,
                 isWishlisted: defaultVariant ? wishlistedVariantIds.has(defaultVariant.id) : false,
                 isAddedToCart: defaultVariant ? cartVariantIds.has(defaultVariant.id) : false,
-                inStock: p.variants.some((v) => v.stockQty > 0),
+                inStock: p.variants.some((v) => availableQty(v) > 0),
                 category: p.category,
                 gender: p.gender,
                 createdAt: p.createdAt,
@@ -370,6 +398,10 @@ export class ProductService implements IProductService {
             },
         })) as any[];
 
+        const reserved = await this.getAvailability(
+            products.flatMap((p: any) => p.variants.map((v: any) => v.id))
+        );
+
         // Optionally enrich with wishlist info
         let wishlistedVariantIds = new Set<string>();
         if (userId && products.length > 0) {
@@ -391,7 +423,9 @@ export class ProductService implements IProductService {
                 primaryImage: defaultVariant?.images[0]?.imageUrl,
                 variantId: defaultVariant?.id,
                 isWishlisted: defaultVariant ? wishlistedVariantIds.has(defaultVariant.id) : false,
-                inStock: p.variants.some((v: any) => v.stockQty > 0),
+                inStock: p.variants.some(
+                    (v: any) => v.stockQty - (reserved.get(v.id) ?? 0) > 0
+                ),
                 rating: Number(p.overallRating),
                 reviewCount: p.reviewCount,
             };

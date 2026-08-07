@@ -1,0 +1,41 @@
+/// A durable "hand this order to the logistics partner" task.
+///
+/// The partner API is regularly unreachable, and a customer must not be told
+/// their order failed because of that. The order is committed immediately and
+/// the partner call is retried from this table on an increasing schedule
+/// (see LOGISTICS_RETRY_DELAYS_MINUTES). When every attempt fails the order is
+/// flagged for manual shipping.
+model LogisticsJob {
+    id String @id @default(uuid())
+
+    /// One live job per order. Re-queuing from the admin panel updates this row
+    /// rather than inserting a second one, so two competing workers can never
+    /// book the same courier order twice.
+    orderId String           @unique
+    type    LogisticsJobType @default(place_order)
+
+    /// Frozen request body. The order row can change later (an admin edits an
+    /// address) but the retry must send what was agreed at checkout time.
+    payload Json
+
+    status      LogisticsJobStatus @default(pending)
+    attempts    Int                @default(0)
+    /// 1 immediate attempt + one per configured retry delay.
+    maxAttempts Int                @default(4)
+    nextRunAt   DateTime           @default(now())
+
+    lastError   String?
+    lastAttempt DateTime?
+
+    /// Claim fields — how a worker takes exclusive ownership of a job without
+    /// depending on Redis being up.
+    lockedAt DateTime?
+    lockedBy String?
+
+    order Order @relation(fields: [orderId], references: [id])
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @default(now()) @updatedAt
+
+    @@index([status, nextRunAt])
+}

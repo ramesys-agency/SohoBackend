@@ -12,9 +12,21 @@ model Order {
     address Address @relation(fields: [addressId], references: [id])
     coupon  Coupon? @relation(fields: [couponId], references: [id])
 
-    items      OrderItem[]
-    payments   Payment[]
-    statusLogs OrderStatusLog[]
+    items        OrderItem[]
+    payments     Payment[]
+    statusLogs   OrderStatusLog[]
+    reservations StockReservation[]
+    logisticsJob LogisticsJob?
+
+    // Manual shipping fallback. `standard` orders are handed to RoadRush by the
+    // retry queue; `manual_shipping` means every attempt failed and staff have
+    // to arrange the delivery themselves.
+    orderType       OrderType @default(standard)
+    manualReason    String?
+    manualFlaggedAt DateTime?
+    manualHandledAt DateTime?
+    /// Admin user id that took ownership of the manual delivery.
+    manualHandledBy String?
 
     // Logistics specific fields
     aggregator              String?
@@ -50,6 +62,9 @@ model Order {
 
 
     createdAt DateTime @default(now())
+
+    // Drives the "needs manual shipping" list in the admin dashboard.
+    @@index([orderType, manualHandledAt])
 }
 
 model OrderItem {
@@ -76,6 +91,10 @@ model OrderStatusLog {
     // Set only for entries mirrored from RoadRush `status_details`. Null means
     // the entry was written by an admin action.
     logisticsStatusName String?
+
+    // Operational entries staff need but customers must never read — e.g. why
+    // the courier hand-off failed. Filtered out of the customer timeline.
+    internal Boolean @default(false)
 
     order     Order    @relation(fields: [orderId], references: [id])
     createdAt DateTime @default(now())

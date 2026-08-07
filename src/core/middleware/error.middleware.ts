@@ -33,6 +33,12 @@ export class ErrorHandler implements IErrorHandler {
             requestId: req.requestId,
         };
 
+        // Machine-readable failure details (e.g. which items are out of stock)
+        // travel back to the client so it can react to the specifics.
+        if (err instanceof HttpError && err.details !== undefined) {
+            (response as unknown as Record<string, unknown>).data = err.details;
+        }
+
         // Include stack trace only in development for debugging
         if (!config.isProduction && err.stack) {
             response.stack = err.stack;

@@ -1,0 +1,8 @@
+/// Lifecycle of a checkout stock hold. Only `active` rows (with `expiresAt` in
+/// the future) count against available stock.
+enum ReservationStatus {
+    active
+    consumed
+    released
+    expired
+}

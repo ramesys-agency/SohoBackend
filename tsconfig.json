@@ -1,7 +1,9 @@
 {
     // Visit https://aka.ms/tsconfig to read more about this file
     "include": ["src/**/*"],
-    "exclude": ["node_modules", "dist", "prisma"],
+    // Tests are typechecked by `npm run typecheck` (tsconfig.test.json); they
+    // must not end up in the shipped build.
+    "exclude": ["node_modules", "dist", "prisma", "src/**/__tests__/**"],
     "compilerOptions": {
         // File Layout
         "rootDir": "./src",

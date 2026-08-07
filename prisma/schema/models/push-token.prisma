@@ -7,5 +7,15 @@ model PushToken {
     createdAt DateTime @default(now())
     updatedAt DateTime @updatedAt
 
+    /// Delivery health, written back from Expo receipts. A token that never
+    /// reports a success while its peers do is the signal that one platform's
+    /// credentials (APNs key, FCM service account) are misconfigured — the
+    /// failure mode that is otherwise completely invisible.
+    lastSuccessAt DateTime?
+    lastErrorAt   DateTime?
+    lastError     String?
+    failureCount  Int       @default(0)
+
     @@index([userId])
+    @@index([platform])
 }

@@ -22,6 +22,7 @@ model User {
     savedPaymentMethods SavedPaymentMethod[]
     notifications       Notification[]
     pushTokens          PushToken[]
+    stockReservations   StockReservation[]
 
     createdAt DateTime  @default(now())
     updatedAt DateTime  @updatedAt

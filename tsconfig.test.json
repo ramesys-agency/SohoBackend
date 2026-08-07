@@ -1,0 +1,11 @@
+{
+    // Same strictness as the build, but covering the test suite and the vitest
+    // config files that the build deliberately leaves out.
+    "extends": "./tsconfig.json",
+    "include": ["src/**/*", "vitest.config.ts", "vitest.global-setup.ts"],
+    "exclude": ["node_modules", "dist", "prisma"],
+    "compilerOptions": {
+        "noEmit": true,
+        "rootDir": "."
+    }
+}
