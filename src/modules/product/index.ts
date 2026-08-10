@@ -1,6 +1,10 @@
 import { Router } from "express";
 import { ProductController } from "./product.controller.js";
-import { authMiddleware, optionalAuthMiddleware } from "../../core/middleware/index.js";
+import {
+    adminMiddleware,
+    authMiddleware,
+    optionalAuthMiddleware,
+} from "../../core/middleware/index.js";
 
 export type { CreateProductDto, UpdateProductDto } from "./product.types.js";
 export type { IProductService } from "./product.interface.js";
@@ -12,12 +16,14 @@ export function registerProductModule(): Router {
 
     const controller = new ProductController();
 
-    router.post("/", authMiddleware, controller.createProduct);
+    // Catalogue reads stay open to the storefront; writes are staff-only.
     router.get("/", optionalAuthMiddleware, controller.getAllProducts);
     router.get("/search", optionalAuthMiddleware, controller.searchProducts);
     router.get("/:productId", optionalAuthMiddleware, controller.getProductById);
-    router.put("/:productId", authMiddleware, controller.updateProduct);
-    router.delete("/:productId", authMiddleware, controller.deleteProduct);
+
+    router.post("/", authMiddleware, adminMiddleware, controller.createProduct);
+    router.put("/:productId", authMiddleware, adminMiddleware, controller.updateProduct);
+    router.delete("/:productId", authMiddleware, adminMiddleware, controller.deleteProduct);
 
     return router;
 }

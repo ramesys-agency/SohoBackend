@@ -13,9 +13,10 @@ export class UserRoutes {
         router.patch("/avatar", authMiddleware, upload.single("avatar"), controller.updateAvatar);
         router.get("/profile", authMiddleware, controller.getProfile);
         router.delete("/account", authMiddleware, controller.deleteAccount);
-        router.get("/admin/all", authMiddleware, controller.getAllUsers);
+        // Staff-only: both return other people's contact details.
+        router.get("/admin/all", authMiddleware, adminMiddleware, controller.getAllUsers);
         router.post("/admin/create", authMiddleware, adminMiddleware, controller.createAdmin);
-        router.get("/:id", authMiddleware, controller.getUserById);
+        router.get("/:id", authMiddleware, adminMiddleware, controller.getUserById);
 
         return router;
     }

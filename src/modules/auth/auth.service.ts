@@ -4,24 +4,11 @@ import { AuthUtils } from "./auth.utils.js";
 import { config } from "../../config/index.js";
 import { ConflictError, UnauthorizedError, BadRequestError } from "../../core/errors/index.js";
 import { MailService } from "../../core/services/index.js";
-// import { OAuth2Client } from "google-auth-library";
+import { OAuth2Client } from "google-auth-library";
 import appleSignin from "apple-signin-auth";
 import { redis } from "../../config/redis.js";
+import { logger } from "../../config/logger.js";
 import crypto from "crypto";
-import https from "https";
-
-function googleTokenInfo(idToken: string): Promise<any> {
-    return new Promise((resolve, reject) => {
-        const path = `/tokeninfo?id_token=${encodeURIComponent(idToken)}`;
-        https
-            .get({ hostname: "oauth2.googleapis.com", path, port: 443 }, (res) => {
-                let body = "";
-                res.on("data", (c) => (body += c));
-                res.on("end", () => resolve({ status: res.statusCode, data: JSON.parse(body) }));
-            })
-            .on("error", reject);
-    });
-}
 import type {
     SignupInput,
     LoginInput,
@@ -33,7 +20,7 @@ import type {
     VerifyOtpInput,
 } from "./auth.schema.js";
 
-// const googleClient = new OAuth2Client();
+const googleClient = new OAuth2Client();
 
 export class AuthService {
     private prisma: PrismaClient;
@@ -167,47 +154,37 @@ export class AuthService {
     async googleAuth(input: GoogleAuthInput) {
         const { idToken } = input;
 
-        try {
-            let email: string;
-            let providerId: string;
-            let name: string | undefined;
-            let picture: string | undefined;
+        // Fail closed: with no configured audience there is nothing to pin the
+        // token to, and any Google account from any app would be accepted.
+        const audiences = config.auth.googleClientIds;
+        if (!audiences.length) {
+            logger.error(
+                "Google sign-in attempted but no GOOGLE_CLIENT_ID is configured — rejecting"
+            );
+            throw new UnauthorizedError("Google sign-in is not available");
+        }
 
-            // Try Google's tokeninfo endpoint first
-            try {
-                const { status, data: tokenInfo } = await googleTokenInfo(idToken);
-                if (status === 200 && tokenInfo.email && !tokenInfo.error) {
-                    // Validate audience against our configured client ID
-                    if (tokenInfo.aud !== config.auth.googleClientId) {
-                        throw new UnauthorizedError("Invalid Google token audience");
-                    }
-                    email = tokenInfo.email;
-                    providerId = tokenInfo.sub;
-                    name = tokenInfo.name;
-                    picture = tokenInfo.picture;
-                } else {
-                    throw new Error("tokeninfo failed");
-                }
-            } catch (err) {
-                if (err instanceof UnauthorizedError) throw err;
-                // Fallback: decode JWT locally (no network call needed)
-                const parts = idToken.split(".");
-                if (parts.length !== 3) throw new UnauthorizedError("Invalid Google token");
-                const payload = JSON.parse(Buffer.from(parts[1]!, "base64url").toString("utf8"));
-                const now = Math.floor(Date.now() / 1000);
-                const GOOGLE_ISSUERS = ["https://accounts.google.com", "accounts.google.com"];
-                if (!payload.email || !GOOGLE_ISSUERS.includes(payload.iss) || payload.exp < now) {
-                    throw new UnauthorizedError("Invalid Google token");
-                }
-                if (payload.aud !== config.auth.googleClientId) {
-                    throw new UnauthorizedError("Invalid Google token audience");
-                }
-                console.warn("[GoogleAuth] Used local JWT decode (tokeninfo unreachable)");
-                email = payload.email;
-                providerId = payload.sub;
-                name = payload.name;
-                picture = payload.picture;
+        try {
+            // Verifies the RS256 signature against Google's published keys and
+            // checks iss/exp/aud. There is deliberately no fallback path: an
+            // unverifiable token is a rejected token.
+            const ticket = await googleClient.verifyIdToken({
+                idToken,
+                audience: audiences,
+            });
+
+            const payload = ticket.getPayload();
+            if (!payload?.email || !payload.sub) {
+                throw new UnauthorizedError("Invalid Google token");
             }
+            if (payload.email_verified === false) {
+                throw new UnauthorizedError("Google account email is not verified");
+            }
+
+            const email = payload.email;
+            const providerId = payload.sub;
+            const name = payload.name;
+            const picture = payload.picture;
 
             let user = await this.prisma.user.findUnique({
                 where: { email },
@@ -272,7 +249,12 @@ export class AuthService {
                 refreshToken,
             };
         } catch (error) {
-            console.error("Google Auth Error:", error instanceof Error ? error.message : error);
+            // "This account has been deleted" and the like are decisions, not
+            // verification failures — they must reach the client unchanged.
+            if (error instanceof UnauthorizedError) throw error;
+            logger.warn("Google Auth Error", {
+                error: error instanceof Error ? error.message : String(error),
+            });
             throw new UnauthorizedError("Invalid Google token");
         }
     }
@@ -280,13 +262,20 @@ export class AuthService {
     async appleAuth(input: AppleAuthInput) {
         const { identityToken, firstName, lastName } = input;
 
-        try {
-            const verifyOptions: any = {};
-            if (config.auth.appleClientId) {
-                verifyOptions.audience = config.auth.appleClientId;
-            }
+        // Same reasoning as Google: without a pinned audience, apple-signin-auth
+        // accepts a correctly signed token issued to any other app.
+        const audiences = config.auth.appleClientIds;
+        if (!audiences.length) {
+            logger.error(
+                "Apple sign-in attempted but no APPLE_CLIENT_ID is configured — rejecting"
+            );
+            throw new UnauthorizedError("Apple sign-in is not available");
+        }
 
-            const payload = await appleSignin.verifyIdToken(identityToken, verifyOptions);
+        try {
+            const payload = await appleSignin.verifyIdToken(identityToken, {
+                audience: audiences.length === 1 ? audiences[0] : audiences,
+            });
 
             if (!payload || !payload.email || !payload.sub) {
                 throw new UnauthorizedError("Invalid Apple token");
@@ -357,7 +346,10 @@ export class AuthService {
                 refreshToken,
             };
         } catch (error) {
-            console.error("Apple Auth Error:", error);
+            if (error instanceof UnauthorizedError) throw error;
+            logger.warn("Apple Auth Error", {
+                error: error instanceof Error ? error.message : String(error),
+            });
             throw new UnauthorizedError("Invalid Apple token");
         }
     }
@@ -366,12 +358,21 @@ export class AuthService {
         try {
             const payload = AuthUtils.verifyToken(refreshToken, config.auth.jwtSecret);
 
+            // Only a token minted as a refresh token may be exchanged. Without
+            // this an access token works here, and — more importantly — the
+            // 30-day refresh token works as a bearer token on every other route.
+            // Sessions predating the `type` claim are classified by lifetime, so
+            // they keep working and pick up typed tokens from this exchange.
+            if (AuthUtils.classifyToken(payload) !== "refresh") {
+                throw new UnauthorizedError("Invalid refresh token");
+            }
+
             // Verify user exists
             const user = await this.prisma.user.findUnique({
                 where: { id: payload.userId },
             });
 
-            if (!user) {
+            if (!user || user.isDeleted) {
                 throw new UnauthorizedError("User not found");
             }
 
@@ -475,9 +476,12 @@ export class AuthService {
         // Send email with nodemailer/fallback
         await this.mailService.sendPasswordResetLink(email, resetLink, resetToken);
 
+        // The link must never travel back over the API — anyone could then reset
+        // any account by asking for it. Outside production it is returned so the
+        // flow stays testable without a mailbox.
         return {
-            message: "Password reset link generated and email sent.",
-            resetLink,
+            message: "If your email is registered, you will receive a password reset link.",
+            ...(config.isProduction ? {} : { resetLink }),
         };
     }
 

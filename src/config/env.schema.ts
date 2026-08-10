@@ -32,7 +32,14 @@ const envSchema = z.object({
     AUTH_CACHE_TTL: z.coerce.number().default(300), // 5 minutes
     AUTH_ACCESS_TOKEN: z.string().default("access_token"),
     AUTH_REFRESH_TOKEN: z.string().default("refresh_token"),
+    // Every audience a Google ID token may legitimately carry. Android and web
+    // sign-ins present the web client ID; an iOS build configured with its own
+    // client ID presents that one. A token whose `aud` is not in this list is
+    // rejected, so an ID token minted for someone else's app can't be replayed.
     GOOGLE_CLIENT_ID: z.string().optional(),
+    GOOGLE_IOS_CLIENT_ID: z.string().optional(),
+    GOOGLE_ANDROID_CLIENT_ID: z.string().optional(),
+    // The app's bundle identifier (and any Services ID used for web sign-in).
     APPLE_CLIENT_ID: z.string().optional(),
 
     // Redis
@@ -85,6 +92,11 @@ const envSchema = z.object({
         .transform((v) => v === "true"),
     ORDER_STATUS_POLL_INTERVAL_MINUTES: z.coerce.number().int().positive().default(15),
     ORDER_STATUS_POLL_BATCH_SIZE: z.coerce.number().int().positive().default(50),
+
+    // Flat delivery charge in BDT, added to every order server-side. The app
+    // reads it from GET /checkout/config so the price the customer agrees to and
+    // the amount the courier collects can never drift apart.
+    DELIVERY_FEE: z.coerce.number().nonnegative().default(150),
 
     // Checkout stock reservation. Disabling only turns off the 5-minute hold —
     // orders still decrement stock atomically and still refuse to oversell.

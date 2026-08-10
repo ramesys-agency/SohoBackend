@@ -1,6 +1,13 @@
 export interface JwtPayload {
     userId: string;
     role: string;
+    /**
+     * Which kind of token this is. Access and refresh tokens are signed with
+     * the same secret, so without this a 30-day refresh token is accepted as a
+     * bearer token on every authenticated route. Optional only so tokens issued
+     * before this field existed still authenticate as access tokens.
+     */
+    type?: "access" | "refresh";
     iat?: number;
     exp?: number;
 }

@@ -4,6 +4,7 @@ import type { JwtPayload } from "../interfaces/index.js";
 import { ForbiddenError, UnauthorizedError } from "../errors/index.js";
 import { config } from "../../config/index.js";
 import { authService } from "../../config/auth.js";
+import { AuthUtils } from "../../modules/auth/auth.utils.js";
 
 export const authMiddleware: RequestHandler = async (req, res, next) => {
     try {
@@ -31,6 +32,12 @@ export const authMiddleware: RequestHandler = async (req, res, next) => {
                 throw new UnauthorizedError("Invalid token");
             }
             throw error;
+        }
+
+        // 2b. A refresh token is not a bearer token. It lives for 30 days and is
+        // only meant for /auth/refresh.
+        if (AuthUtils.classifyToken(payload) === "refresh") {
+            throw new UnauthorizedError("Invalid token");
         }
 
         // 3. Verify user in DB (with cache)
@@ -64,6 +71,10 @@ export const optionalAuthMiddleware: RequestHandler = async (req, res, next) => 
         try {
             payload = jwt.verify(token, config.auth.jwtSecret) as JwtPayload;
         } catch {
+            return next();
+        }
+
+        if (AuthUtils.classifyToken(payload) === "refresh") {
             return next();
         }
 

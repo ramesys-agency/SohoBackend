@@ -8,6 +8,11 @@ model Order {
     couponId       String?
     discountAmount Decimal @default(0)
 
+    /// Delivery charge applied at checkout, kept as its own line so the total
+    /// can be audited and so a later change to the fee never rewrites history.
+    /// totalAmount = sum(items) + shippingFee - discountAmount.
+    shippingFee Decimal @default(0)
+
     user    User    @relation(fields: [userId], references: [id])
     address Address @relation(fields: [addressId], references: [id])
     coupon  Coupon? @relation(fields: [couponId], references: [id])

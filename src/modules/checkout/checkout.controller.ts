@@ -1,10 +1,30 @@
 import type { Request, Response, NextFunction } from "express";
+import { config } from "../../config/index.js";
 import { BadRequestError } from "../../core/errors/http-errors.js";
 import { CheckoutService } from "./checkout.service.js";
 import { reserveCheckoutSchema } from "./checkout.schema.js";
 
 export class CheckoutController {
     private service = new CheckoutService();
+
+    /**
+     * Checkout pricing the client needs before an order exists. The delivery fee
+     * is applied server-side on every order; this is only so the app can show
+     * the same breakdown the server will charge.
+     */
+    getConfig = (_req: Request, res: Response, next: NextFunction) => {
+        try {
+            res.status(200).json({
+                message: "Checkout config fetched",
+                data: {
+                    deliveryFee: config.checkout.deliveryFee,
+                    currency: "BDT",
+                },
+            });
+        } catch (error) {
+            next(error);
+        }
+    };
 
     reserve = async (req: Request, res: Response, next: NextFunction) => {
         try {

@@ -5,10 +5,17 @@ import { HttpError } from "../errors/http-errors.js";
 import { config } from "../../config/index.js";
 import { logger } from "../../config/logger.js";
 
+/** Duck-typed so the handler doesn't need multer's types at runtime. */
+function isMulterError(err: Error): boolean {
+    return err.name === "MulterError";
+}
+
 export class ErrorHandler implements IErrorHandler {
     handle(err: Error, req: Request, res: Response, _next: NextFunction): void {
-        // Determine status code
-        const statusCode = err instanceof HttpError ? err.statusCode : 500;
+        // Determine status code. An oversized or unexpected upload is the
+        // client's mistake, not a server fault — multer signals those with its
+        // own error class rather than an HttpError.
+        const statusCode = err instanceof HttpError ? err.statusCode : isMulterError(err) ? 413 : 500;
         const isServerError = statusCode >= 500;
 
         // Log error with request context

@@ -1,10 +1,10 @@
 import { type Request, type Response, type NextFunction } from "express";
-import multer from "multer";
 import { StorageService } from "../../core/services/storage.service.js";
-import { randomBytes } from "crypto";
+import { buildObjectKey } from "./upload.config.js";
 
-const storage = multer.memoryStorage();
-export const upload = multer({ storage });
+// Re-exported so the modules that already import `upload` from here keep
+// working — they now get the size- and type-limited instance.
+export { upload, reviewMediaUpload } from "./upload.config.js";
 
 export class UploadController {
     private storageService = new StorageService();
@@ -17,13 +17,15 @@ export class UploadController {
             }
 
             const file = req.file;
-            const folder = (req.body.folder as string) || "uploads";
-            const fileName = (req.body.fileName as string) || "file";
-            
-            // Format: folder/fileName_randomId.ext
-            const fileExt = file.originalname.split(".").pop();
-            const randomId = randomBytes(4).toString("hex");
-            const key = `${folder}/${fileName}_${randomId}.${fileExt}`;
+
+            // Format: folder/fileName_randomId.ext — every part sanitised, and
+            // the extension taken from the verified MIME type rather than from
+            // the client's filename.
+            const key = buildObjectKey({
+                folder: req.body.folder as string | undefined,
+                fileName: req.body.fileName as string | undefined,
+                mimetype: file.mimetype,
+            });
 
             const url = await this.storageService.uploadFile(
                 file.buffer,

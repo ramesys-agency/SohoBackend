@@ -6,6 +6,10 @@ export function registerCheckoutModule(): Router {
     const router = Router();
     const controller = new CheckoutController();
 
+    // Pricing the app has to show before an order exists. Registered before
+    // "/:checkoutId" so it isn't swallowed by it.
+    router.get("/config", controller.getConfig);
+
     router.post("/reserve", authMiddleware, controller.reserve);
     router.get("/:checkoutId", authMiddleware, controller.status);
     router.post("/:checkoutId/renew", authMiddleware, controller.renew);

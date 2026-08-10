@@ -9,6 +9,16 @@ export interface PasswordResetPayload extends JwtPayload {
     hash: string;
 }
 
+const ACCESS_TOKEN_TTL = "15m";
+const REFRESH_TOKEN_TTL = "30d";
+
+/**
+ * Anything living longer than this is a refresh token. Access tokens are minted
+ * for 15 minutes, refresh tokens for 30 days, so the gap is enormous and the
+ * threshold never has to be precise.
+ */
+const LEGACY_REFRESH_MIN_LIFETIME_SECONDS = 60 * 60;
+
 export class AuthUtils {
     static async hashPassword(password: string): Promise<string> {
         const salt = randomBytes(16).toString("hex");
@@ -25,15 +35,35 @@ export class AuthUtils {
     }
 
     static generateAccessToken(payload: JwtPayload, secret: string): string {
-        return jwt.sign({ ...payload }, secret, {
-            expiresIn: "15m",
+        return jwt.sign({ ...payload, type: "access" }, secret, {
+            expiresIn: ACCESS_TOKEN_TTL,
         });
     }
 
     static generateRefreshToken(payload: JwtPayload, secret: string): string {
-        return jwt.sign({ ...payload }, secret, {
-            expiresIn: "30d",
+        return jwt.sign({ ...payload, type: "refresh" }, secret, {
+            expiresIn: REFRESH_TOKEN_TTL,
         });
+    }
+
+    /**
+     * What kind of token this is.
+     *
+     * Tokens minted before the `type` claim existed carry no marker, and both
+     * kinds are signed with the same secret — so they are told apart by how long
+     * they were issued for. That keeps sessions created before this change alive
+     * (they upgrade to typed tokens on their next refresh) without letting a
+     * legacy 30-day refresh token pass as a bearer token in the meantime.
+     */
+    static classifyToken(payload: JwtPayload): "access" | "refresh" {
+        if (payload.type) return payload.type;
+
+        const lifetime =
+            payload.exp !== undefined && payload.iat !== undefined
+                ? payload.exp - payload.iat
+                : 0;
+
+        return lifetime > LEGACY_REFRESH_MIN_LIFETIME_SECONDS ? "refresh" : "access";
     }
 
     static verifyToken(token: string, secret: string): JwtPayload {

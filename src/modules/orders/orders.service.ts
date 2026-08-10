@@ -12,6 +12,7 @@ import { CheckoutService, type CheckoutLine } from "../checkout/checkout.service
 import { logisticsJobService } from "../logistics/logistics-job.service.js";
 import { logisticsJobWorker } from "../logistics/logistics-job.worker.js";
 import { NotificationService } from "../notification/notification.service.js";
+import { config } from "../../config/index.js";
 import { logger } from "../../config/logger.js";
 import { OrderStatus, OrderType, PaymentStatus, type Prisma } from "@prisma/client";
 import { prisma } from "../../config/prisma.js";
@@ -141,9 +142,11 @@ export class OrderService {
             }
         }
 
-        // 2. Fetch Drop Address
-        const address = await this.prisma.getClient().address.findUnique({
-            where: { id: data.addressId },
+        // 2. Fetch Drop Address. Scoped to the buyer: an unscoped lookup lets
+        // anyone who guesses an address id ship to it, and pulls that person's
+        // name, phone and email into the order and the courier payload.
+        const address = await this.prisma.getClient().address.findFirst({
+            where: { id: data.addressId, userId, isDeleted: false },
             include: { user: true },
         });
         if (!address) throw new NotFoundError("Drop address not found");
@@ -184,7 +187,12 @@ export class OrderService {
             }
         }
 
-        const totalAmount = subtotal - discountAmount;
+        // The delivery charge is the server's number, not the client's — the app
+        // only displays what GET /checkout/config told it. Everything downstream
+        // (the payment row, and the COD amount the courier collects) uses this
+        // total, so what the customer agreed to is what gets collected.
+        const shippingFee = config.checkout.deliveryFee;
+        const totalAmount = Math.max(0, subtotal + shippingFee - discountAmount);
         const customerFullName = address.user.fullName || data.customerFullName || "Not Provided";
         const customerPhone = address.user.phone || data.customerPhone;
 
@@ -209,6 +217,7 @@ export class OrderService {
                     totalAmount,
                     couponId,
                     discountAmount,
+                    shippingFee,
                     aggregator: data.aggregator,
                     cod: data.paymentMethod === "COD",
                     itemValue: totalAmount,

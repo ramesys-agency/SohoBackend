@@ -2,6 +2,17 @@ import { validateEnv } from "./env.schema.js";
 
 const env = validateEnv();
 
+/** Accepts a single id or a comma-separated list, dropping blanks. */
+const toIdList = (...values: (string | undefined)[]): string[] => [
+    ...new Set(
+        values
+            .filter((v): v is string => Boolean(v))
+            .flatMap((v) => v.split(","))
+            .map((v) => v.trim())
+            .filter(Boolean)
+    ),
+];
+
 export const config = {
     port: env.PORT,
     env: env.NODE_ENV,
@@ -41,6 +52,14 @@ export const config = {
         refreshToken: env.AUTH_REFRESH_TOKEN,
         googleClientId: env.GOOGLE_CLIENT_ID,
         appleClientId: env.APPLE_CLIENT_ID,
+        // Audiences an OAuth ID token is allowed to carry. Empty means the
+        // provider is not configured, and sign-in through it is refused.
+        googleClientIds: toIdList(
+            env.GOOGLE_CLIENT_ID,
+            env.GOOGLE_IOS_CLIENT_ID,
+            env.GOOGLE_ANDROID_CLIENT_ID
+        ),
+        appleClientIds: toIdList(env.APPLE_CLIENT_ID),
     },
 
     redis: {
@@ -96,6 +115,7 @@ export const config = {
     },
 
     checkout: {
+        deliveryFee: env.DELIVERY_FEE,
         reservationEnabled: env.CHECKOUT_RESERVATION_ENABLED,
         reservationTtlMinutes: env.CHECKOUT_RESERVATION_TTL_MINUTES,
         maxHoldMinutes: env.CHECKOUT_MAX_HOLD_MINUTES,
