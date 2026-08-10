@@ -19,6 +19,13 @@ export function registerOrdersModule(): Router {
     router.post("/admin/:orderId/refresh-status", authMiddleware, adminMiddleware, controller.refreshOrderStatus);
     router.post("/admin/poll-statuses", authMiddleware, adminMiddleware, controller.pollOrderStatuses);
 
+    // Status reconciliation — orders where our status and RoadRush's disagree.
+    // `conflicts/count` is declared before `conflicts` so it is not swallowed by it.
+    router.get("/admin/conflicts/count", authMiddleware, adminMiddleware, controller.adminGetStatusConflictCount);
+    router.get("/admin/conflicts", authMiddleware, adminMiddleware, controller.adminGetStatusConflicts);
+    router.post("/admin/:orderId/conflict/accept", authMiddleware, adminMiddleware, controller.adminResolveStatusConflict);
+    router.post("/admin/:orderId/conflict/keep", authMiddleware, adminMiddleware, controller.adminResolveStatusConflict);
+
     // Manual shipping — orders the automated hand-off gave up on.
     // `manual/count` is declared before `manual` so it is not swallowed by it.
     router.get("/admin/manual/count", authMiddleware, adminMiddleware, controller.adminGetManualCount);

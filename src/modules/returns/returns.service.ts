@@ -71,8 +71,13 @@ export class ReturnService {
             throw new NotFoundError("Order not found");
         }
 
-        if (order.status === "cancelled") {
-            throw new BadRequestError("A cancelled order cannot be returned");
+        // Nothing can come back before it has gone out. `returned` is allowed too
+        // so further lines can be recorded against an order already flipped by an
+        // earlier, partial return.
+        if (order.status !== "delivered" && order.status !== "returned") {
+            throw new BadRequestError(
+                `Only a delivered order can be returned — this one is ${order.status}`
+            );
         }
 
         // Remaining eligible units per item, decremented as we walk the payload so

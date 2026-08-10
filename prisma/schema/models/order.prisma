@@ -1,8 +1,29 @@
 model Order {
-    id          String      @id @default(uuid())
-    userId      String
-    addressId   String
-    status      OrderStatus @default(pending)
+    id        String @id @default(uuid())
+    userId    String
+    addressId String
+
+    /// The effective status — the one the customer, the app and every list in
+    /// the dashboard read. It is DERIVED, never written by hand: both writers
+    /// state their own opinion below and `resolveOrderStatus` decides which one
+    /// wins. See order-status.resolver.ts.
+    status OrderStatus @default(pending)
+
+    /// Which opinion the resolver sided with for the current `status`.
+    statusSource StatusSource @default(system)
+
+    /// True when the two opinions disagree in a way the resolver would not
+    /// settle on its own — an admin cancelled an order RoadRush is still
+    /// delivering, RoadRush cancelled one we think is fine, or a pinned status
+    /// has been overtaken. Drives the reconciliation queue.
+    statusConflict       Boolean @default(false)
+    statusConflictReason String?
+
+    /// Set when an admin has looked at the conflict and chosen a side. Cleared
+    /// automatically the moment RoadRush reports something new, so an
+    /// acknowledged conflict cannot hide a later, different one.
+    statusConflictAckAt DateTime?
+
     totalAmount Decimal
 
     couponId       String?
@@ -22,6 +43,20 @@ model Order {
     statusLogs   OrderStatusLog[]
     reservations StockReservation[]
     logisticsJob LogisticsJob?
+
+    // --- The admin's opinion. Only updateOrderStatus writes these. ------------
+
+    /// The last status a human asked for. Null until someone touches the order.
+    adminStatus       OrderStatus?
+    adminStatusAt     DateTime?
+    /// Admin user id that made the call.
+    adminStatusBy     String?
+    adminStatusReason String?
+
+    /// Set when an admin used the status override, or chose "Keep mine" on a
+    /// conflict. While pinned, RoadRush can still report — and still raise a
+    /// conflict — but it can no longer move the effective status.
+    adminStatusPinned Boolean @default(false)
 
     // Manual shipping fallback. `standard` orders are handed to RoadRush by the
     // retry queue; `manual_shipping` means every attempt failed and staff have
@@ -49,6 +84,11 @@ model Order {
     orderCode               String?
     lastLogisticsSync       DateTime?
 
+    // --- RoadRush's opinion. Only refreshOrderStatus writes these. -----------
+
+    /// RoadRush's status collapsed onto our enum. Null until the first sync.
+    logisticsStatus OrderStatus?
+
     // Raw partner status name (e.g. "Rider Accepted"), kept alongside the
     // collapsed `status` enum so tracking shows what RoadRush actually reported.
     logisticsStatusName String?
@@ -70,6 +110,8 @@ model Order {
 
     // Drives the "needs manual shipping" list in the admin dashboard.
     @@index([orderType, manualHandledAt])
+    // ...and the same for the "status needs reconciling" list.
+    @@index([statusConflict, statusConflictAckAt])
 }
 
 model OrderItem {
@@ -96,6 +138,10 @@ model OrderStatusLog {
     // Set only for entries mirrored from RoadRush `status_details`. Null means
     // the entry was written by an admin action.
     logisticsStatusName String?
+
+    /// Who caused this entry. Makes the timeline auditable after the fact —
+    /// "who moved this to cancelled" was previously unanswerable.
+    source StatusSource @default(system)
 
     // Operational entries staff need but customers must never read — e.g. why
     // the courier hand-off failed. Filtered out of the customer timeline.

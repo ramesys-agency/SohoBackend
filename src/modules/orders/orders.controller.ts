@@ -57,8 +57,15 @@ export class OrderController {
 
     adminGetAllOrders = async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const { search, startDate, endDate, paymentStatus, fulfillmentStatus, orderType } =
-                req.query as Record<string, string | undefined>;
+            const {
+                search,
+                startDate,
+                endDate,
+                paymentStatus,
+                fulfillmentStatus,
+                orderType,
+                statusConflict,
+            } = req.query as Record<string, string | undefined>;
             const orders = await this.orderService.adminGetAllOrders({
                 ...(search !== undefined && { search }),
                 ...(startDate !== undefined && { startDate }),
@@ -66,6 +73,7 @@ export class OrderController {
                 ...(paymentStatus !== undefined && { paymentStatus }),
                 ...(fulfillmentStatus !== undefined && { fulfillmentStatus }),
                 ...(orderType !== undefined && { orderType }),
+                ...(statusConflict !== undefined && { statusConflict }),
             });
             res.status(200).json({
                 message: "All orders fetched successfully",
@@ -79,17 +87,82 @@ export class OrderController {
     updateOrderStatus = async (req: Request, res: Response, next: NextFunction) => {
         try {
             const { orderId } = req.params;
-            const { status, note } = req.body;
+            const { status, note, override, resetPayment } = req.body;
 
             if (!orderId || typeof orderId !== "string") {
                 throw new BadRequestError("Valid Order ID is required");
             }
 
-            const order = await this.orderService.updateOrderStatus(orderId, status, note);
+            const order = await this.orderService.updateOrderStatus(orderId, status, note, {
+                override: override === true,
+                resetPayment: resetPayment === true,
+                actorId: (req as any).user.id,
+            });
 
             res.status(200).json({
                 message: "Order status updated successfully",
                 data: order,
+            });
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    /**
+     * Settle a disagreement between our status and RoadRush's. The route decides
+     * the direction so the body cannot be used to flip it.
+     */
+    adminResolveStatusConflict = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { orderId } = req.params;
+            if (!orderId || typeof orderId !== "string") {
+                throw new BadRequestError("Valid Order ID is required");
+            }
+
+            const choice = req.path.endsWith("/accept") ? "accept" : "keep";
+            const adminId = (req as any).user.id;
+
+            const order = await this.orderService.adminResolveStatusConflict(
+                orderId,
+                adminId,
+                choice,
+                req.body?.note
+            );
+
+            res.status(200).json({
+                message:
+                    choice === "accept"
+                        ? "RoadRush's status accepted"
+                        : "Status kept — the conflict is marked as reviewed",
+                data: order,
+            });
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    adminGetStatusConflicts = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { search } = req.query as Record<string, string | undefined>;
+            const orders = await this.orderService.adminGetStatusConflicts({
+                ...(search !== undefined && { search }),
+            });
+
+            res.status(200).json({
+                message: "Status conflicts fetched successfully",
+                data: orders,
+            });
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    adminGetStatusConflictCount = async (_req: Request, res: Response, next: NextFunction) => {
+        try {
+            const count = await this.orderService.adminGetStatusConflictCount();
+            res.status(200).json({
+                message: "Status conflict count fetched successfully",
+                data: count,
             });
         } catch (error) {
             next(error);

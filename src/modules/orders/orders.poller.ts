@@ -87,7 +87,14 @@ export class OrderStatusPoller {
             const orders = await prisma.getClient().order.findMany({
                 where: {
                     orderCode: { not: null },
-                    status: { notIn: [...TERMINAL_STATUSES] },
+                    OR: [
+                        { status: { notIn: [...TERMINAL_STATUSES] } },
+                        // A finished order with an open disagreement is still
+                        // worth asking about — an order cancelled here stays
+                        // live at RoadRush, and them catching up is what clears
+                        // the flag without anyone having to.
+                        { statusConflict: true, statusConflictAckAt: null },
+                    ],
                 },
                 select: { id: true, orderCode: true },
                 // Least-recently-synced first (never-synced first of all) so a

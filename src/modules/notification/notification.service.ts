@@ -219,12 +219,49 @@ export class NotificationService {
         };
     }
 
+    /**
+     * The order's whole payment was refunded by an admin.
+     *
+     * Distinct from the per-return refund notice in ReturnService: this one is
+     * the order-level refund, which is also what a cancelled prepaid order gets.
+     */
+    async notifyOrderRefunded(params: {
+        userId: string;
+        orderId: string;
+        orderCode?: string | null;
+        amount?: string | null;
+    }) {
+        const reference = params.orderCode || params.orderId.slice(0, 8).toUpperCase();
+        const amount = params.amount ? `৳${Number(params.amount).toLocaleString()}` : null;
+
+        return await this.createForUser({
+            userId: params.userId,
+            title: "Refund processed",
+            body: amount
+                ? `A refund of ${amount} for order #${reference} has been processed. It may take a few days to reach your account.`
+                : `Your payment for order #${reference} has been refunded. It may take a few days to reach your account.`,
+            type: "order",
+            data: {
+                orderId: params.orderId,
+                orderCode: params.orderCode ?? null,
+                paymentStatus: "refunded",
+                screen: "orders",
+            },
+        });
+    }
+
     async notifyOrderStatusChange(params: {
         userId: string;
         orderId: string;
         orderCode?: string | null;
         status: string;
         itemDetails?: string | null;
+        /**
+         * The admin's reason for the change. Appended to the body for the states
+         * a customer will ask "why?" about — a cancellation from our side is
+         * useless to them without one.
+         */
+        note?: string;
     }) {
         const reference = params.orderCode || params.orderId.slice(0, 8).toUpperCase();
         const messages: Record<string, { title: string; body: string }> = {
@@ -259,10 +296,14 @@ export class NotificationService {
             body: `Your order #${reference} status is now "${params.status}".`,
         };
 
+        const reason = params.note?.trim();
+        const explains = params.status === "cancelled" || params.status === "returned";
+        const body = explains && reason ? `${message.body} Reason: ${reason}` : message.body;
+
         return await this.createForUser({
             userId: params.userId,
             title: message.title,
-            body: message.body,
+            body,
             type: "order",
             data: {
                 orderId: params.orderId,

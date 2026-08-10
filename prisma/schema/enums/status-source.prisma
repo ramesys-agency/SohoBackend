@@ -1,0 +1,10 @@
+/// Who decided an order's effective `status`.
+///
+/// The status is derived from two independent opinions — the admin's and
+/// RoadRush's — so this records which one the resolver sided with. `system` is
+/// the birth state, before either has said anything.
+enum StatusSource {
+    admin
+    roadrush
+    system
+}

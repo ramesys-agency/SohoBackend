@@ -14,9 +14,9 @@ import { logisticsJobWorker } from "../logistics/logistics-job.worker.js";
 import { NotificationService } from "../notification/notification.service.js";
 import { config } from "../../config/index.js";
 import { logger } from "../../config/logger.js";
-import { OrderStatus, OrderType, PaymentStatus, type Prisma } from "@prisma/client";
+import { OrderStatus, OrderType, PaymentStatus, StatusSource, type Prisma } from "@prisma/client";
 import { prisma } from "../../config/prisma.js";
-
+import { resolveOrderStatus, type StatusOutcome } from "./order-status.resolver.js";
 
 /**
  * Manual shipping is an internal fulfilment route — staff arrange the delivery
@@ -31,6 +31,122 @@ const MANUAL_SHIPPING_FIELDS = {
     manualHandledAt: true,
     manualHandledBy: true,
 } as const;
+
+/**
+ * The only status moves an admin may make, keyed by the order's current status.
+ *
+ * The ladder is deliberately one-way: an order is confirmed, shipped, then
+ * delivered. It can be cancelled at any point before it lands — a parcel the
+ * courier loses or brings back still needs a way out. Once it is delivered the
+ * customer has the goods, so the only way out is a return.
+ *
+ * This governs what a human may ask for. What the order actually ends up at is
+ * then arbitrated against RoadRush's opinion by `resolveOrderStatus` — the
+ * courier is bound by its own, looser rules, not by this map.
+ */
+export const ADMIN_STATUS_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
+    [OrderStatus.pending]: [OrderStatus.processing, OrderStatus.cancelled],
+    [OrderStatus.processing]: [OrderStatus.shipped, OrderStatus.cancelled],
+    [OrderStatus.shipped]: [OrderStatus.delivered, OrderStatus.cancelled],
+    [OrderStatus.delivered]: [OrderStatus.returned],
+    [OrderStatus.cancelled]: [],
+    [OrderStatus.returned]: [],
+};
+
+/**
+ * Order statuses a given payment status can be set from, by hand, in the
+ * dashboard.
+ *
+ * Money follows the goods: nothing is collectable until the parcel is in the
+ * customer's hands (delivered implies paid), and a refund only makes sense once
+ * the order has come back to us or never went out at all.
+ *
+ * `pending` / `cod_pending` are absent on purpose — those are the states an
+ * order is born in, not something an admin moves it back to.
+ */
+const PAYMENT_STATUS_PRECONDITIONS: Partial<Record<PaymentStatus, OrderStatus[]>> = {
+    [PaymentStatus.success]: [OrderStatus.delivered, OrderStatus.returned],
+    [PaymentStatus.cod_collected]: [OrderStatus.delivered, OrderStatus.returned],
+    [PaymentStatus.failed]: [OrderStatus.delivered, OrderStatus.returned],
+    [PaymentStatus.refunded]: [OrderStatus.returned, OrderStatus.cancelled],
+};
+
+/** Payment states that mean the money is already in — nothing left to collect. */
+const SETTLED_PAYMENT_STATUSES: PaymentStatus[] = [
+    PaymentStatus.success,
+    PaymentStatus.cod_collected,
+    PaymentStatus.refunded,
+];
+
+/** Statuses that mean the parcel reached the customer, so the money is settled. */
+const LANDED_STATUSES: OrderStatus[] = [OrderStatus.delivered, OrderStatus.returned];
+
+/**
+ * Statuses where the order is still on its way, so nothing is collectable yet.
+ *
+ * Only a move back to one of these can un-settle a payment. Cancelling a
+ * delivered order is not a way back — the money did change hands, so it needs a
+ * refund, not a payment reset that would erase the record of it.
+ */
+const PRE_DELIVERY_STATUSES: OrderStatus[] = [
+    OrderStatus.pending,
+    OrderStatus.processing,
+    OrderStatus.shipped,
+];
+
+export interface UpdateOrderStatusOptions {
+    /**
+     * Skip the transition ladder. This is the dashboard's "edit status" override,
+     * for correcting a status an admin set by mistake — the ladder is the rule,
+     * this is the way back out of it.
+     *
+     * It also pins the status: an override is a human taking ownership, so the
+     * courier stops being allowed to move it afterwards.
+     */
+    override?: boolean;
+    /**
+     * Put the payment back to unpaid. Only acted on when the move takes an order
+     * back out of delivered/returned, where the delivery had settled it.
+     */
+    resetPayment?: boolean;
+    /** Admin user id, recorded on the order and the timeline entry. */
+    actorId?: string;
+}
+
+/**
+ * One side's statement about where an order is, handed to `applyOrderStatus`.
+ *
+ * Every status write in this service goes through that one function so the
+ * consequences of reaching a status — stock moved, payment settled, timeline
+ * written, customer told — happen exactly once and identically no matter who
+ * got there first. They used to live only on the admin path, which is why a
+ * courier-driven cancellation never put its units back on the shelf.
+ */
+interface StatusIntent {
+    /** Who is speaking. */
+    source: StatusSource;
+    /** The admin's new opinion. Omit on the courier path. */
+    adminStatus?: OrderStatus;
+    /** RoadRush's new opinion. Omit on the admin path. */
+    logisticsStatus?: OrderStatus;
+    note?: string | null;
+    actorId?: string | null;
+    /** Admin override — allowed to walk the status backwards. */
+    force?: boolean;
+    /** Pin the status against the courier, or release an existing pin. */
+    pin?: boolean;
+    resetPayment?: boolean;
+    /** Mark the conflict as looked at. Cleared again by any new courier status. */
+    acknowledge?: boolean;
+    /**
+     * Leave the timeline alone. Set by the poller, whose entries come from
+     * `syncStatusHistory` with RoadRush's own names and timestamps — a second
+     * entry for the same event would just double the timeline.
+     */
+    skipLog?: boolean;
+    /** Extra columns the caller wants written in the same transaction. */
+    extraData?: Prisma.OrderUpdateInput;
+}
 
 export class OrderService {
     private prisma: PrismaService = prisma;
@@ -61,6 +177,9 @@ export class OrderService {
                     },
                 },
                 address: true,
+                // Status only — enough for the app to show "Refunded" on the card
+                // without handing the customer the rest of the payment record.
+                payments: { select: { status: true } },
             },
             orderBy: { createdAt: "desc" },
         });
@@ -419,8 +538,15 @@ export class OrderService {
         paymentStatus?: string;
         fulfillmentStatus?: string;
         orderType?: string;
+        /** "true" narrows the list to orders whose two statuses disagree. */
+        statusConflict?: string;
     }) {
         const where: Prisma.OrderWhereInput = {};
+
+        if (params?.statusConflict === "true") {
+            where.statusConflict = true;
+            where.statusConflictAckAt = null;
+        }
 
         if (params?.orderType && params.orderType !== "all") {
             const orderType = Object.values(OrderType).find((t) => t === params.orderType);
@@ -598,65 +724,281 @@ export class OrderService {
         };
     }
 
-    async updateOrderStatus(orderId: string, status: OrderStatus, note?: string) {
-        const updated = await this.prisma.getClient().$transaction(async (tx) => {
-            const existing = await tx.order.findUnique({
-                where: { id: orderId },
-                include: { items: { select: { variantId: true, quantity: true } } },
-            });
+    /**
+     * Admin-driven status change. Only the moves in ADMIN_STATUS_TRANSITIONS are
+     * accepted, cancelling always carries a customer-facing reason, and reaching
+     * `delivered` settles the payment (delivered means the money changed hands —
+     * cash to the rider, or already paid online).
+     */
+    async updateOrderStatus(
+        orderId: string,
+        status: OrderStatus,
+        note?: string,
+        options?: UpdateOrderStatusOptions
+    ) {
+        if (!Object.values(OrderStatus).includes(status)) {
+            throw new BadRequestError(
+                `Invalid order status "${status}". Expected one of: ${Object.values(OrderStatus).join(", ")}`
+            );
+        }
 
-            if (!existing) throw new NotFoundError("Order not found");
+        const override = options?.override === true;
+        const reason = note?.trim();
 
-            // Cancelling puts the units back on the shelf. `returned` deliberately
-            // does not — a returned garment may not be resellable, so restocking
-            // it stays an explicit inventory decision.
-            if (status === OrderStatus.cancelled && existing.status !== OrderStatus.cancelled) {
-                for (const item of existing.items) {
-                    await tx.productVariant.update({
-                        where: { id: item.variantId },
-                        data: { stockQty: { increment: item.quantity } },
-                    });
+        // The customer is told the order was cancelled either way, so an empty
+        // reason would leave them with a cancellation and no explanation.
+        if (status === OrderStatus.cancelled && !reason) {
+            throw new BadRequestError(
+                "A cancellation reason is required — the customer is shown it"
+            );
+        }
+
+        const { order, changed, outcome } = await this.prisma
+            .getClient()
+            .$transaction(async (tx) => {
+                const existing = await tx.order.findUnique({
+                    where: { id: orderId },
+                    select: { status: true },
+                });
+
+                if (!existing) throw new NotFoundError("Order not found");
+
+                if (existing.status === status) {
+                    throw new BadRequestError(`This order is already ${status}`);
                 }
 
-                if (existing.items.length) {
-                    await tx.inventoryLog.createMany({
-                        data: existing.items.map((item) => ({
-                            variantId: item.variantId,
-                            changeQty: item.quantity,
-                            reason: "order_cancelled",
-                            referenceId: orderId,
-                        })),
+                // `override` is the correction path — an admin fixing a status set
+                // by mistake. It skips the ladder but nothing else: the reason, the
+                // stock moves and the notification all still happen.
+                if (!override) {
+                    const allowed = ADMIN_STATUS_TRANSITIONS[existing.status] ?? [];
+                    if (!allowed.includes(status)) {
+                        throw new BadRequestError(
+                            allowed.length === 0
+                                ? `A ${existing.status} order is final — use the status override to correct it`
+                                : `A ${existing.status} order can only move to: ${allowed.join(", ")}`
+                        );
+                    }
+                }
+
+                return await this.applyOrderStatus(tx, orderId, {
+                    source: StatusSource.admin,
+                    adminStatus: status,
+                    note: reason ?? null,
+                    actorId: options?.actorId ?? null,
+                    force: override,
+                    // An override is a human taking ownership, so the courier stops
+                    // being allowed to move this order from here on.
+                    ...(override && { pin: true }),
+                    resetPayment: options?.resetPayment === true,
+                });
+            });
+
+        if (changed) {
+            // Notify the customer about the status change (fire-and-forget).
+            await this.notificationService.notifyOrderStatusChange({
+                userId: order.userId,
+                orderId: order.id,
+                orderCode: order.orderCode,
+                status: outcome.status,
+                itemDetails: order.itemDetails,
+                ...(reason ? { note: reason } : {}),
+            });
+        }
+
+        return order;
+    }
+
+    /**
+     * The single place an order's effective status is written.
+     *
+     * Both writers — the dashboard and the RoadRush poller — state their own
+     * opinion here and `resolveOrderStatus` decides which one the order actually
+     * takes. Everything that follows from *arriving* at a status then happens
+     * once, in one transaction, regardless of who caused it: stock moves,
+     * payment settles, the timeline gets an entry.
+     *
+     * That last part is the point. These consequences used to live only on the
+     * admin path, so the same status reached by the poller left the stock and
+     * the money untouched.
+     *
+     * Returns the updated order plus whether the effective status actually
+     * moved — callers use that to decide whether the customer hears about it.
+     */
+    private async applyOrderStatus(
+        tx: Prisma.TransactionClient,
+        orderId: string,
+        intent: StatusIntent
+    ) {
+        const existing = await tx.order.findUnique({
+            where: { id: orderId },
+            include: { items: { select: { variantId: true, quantity: true } } },
+        });
+
+        if (!existing) throw new NotFoundError("Order not found");
+
+        const pinned = intent.pin ?? existing.adminStatusPinned;
+
+        const outcome: StatusOutcome = resolveOrderStatus({
+            current: existing.status,
+            currentSource: existing.statusSource,
+            admin: intent.adminStatus ?? existing.adminStatus,
+            logistics: intent.logisticsStatus ?? existing.logisticsStatus,
+            // A `manual_shipping` order is being delivered by staff, so RoadRush
+            // has no standing to overrule them even if a stale code is on file.
+            handedOff: existing.orderCode !== null && existing.orderType === OrderType.standard,
+            pinned,
+            force: intent.force === true,
+            forceSource: intent.source,
+        });
+
+        const changed = outcome.status !== existing.status;
+
+        if (changed) {
+            const payment = await tx.payment.findFirst({
+                where: { orderId },
+                orderBy: { createdAt: "desc" },
+            });
+
+            // Delivered means the customer has the goods and has settled up, so
+            // the payment stops being pending here rather than in a second,
+            // forgettable admin action. `Payment not received` on the dashboard is
+            // the escape hatch for the rider who came back empty-handed.
+            if (outcome.status === OrderStatus.delivered) {
+                if (payment && !SETTLED_PAYMENT_STATUSES.includes(payment.status)) {
+                    await tx.payment.update({
+                        where: { id: payment.id },
+                        data: { status: PaymentStatus.success },
                     });
                 }
             }
 
-            return await tx.order.update({
-                where: { id: orderId },
-                data: {
-                    status,
-                    statusLogs: {
-                        create: {
-                            status: status,
-                            note: note,
-                        } as any,
+            // Undoing a delivery has to undo what the delivery implied, otherwise
+            // the order sits at "processing" with the money already counted. Opt-in
+            // rather than automatic: only the admin knows whether the cash actually
+            // came in before the status was corrected.
+            if (
+                intent.resetPayment &&
+                payment &&
+                LANDED_STATUSES.includes(existing.status) &&
+                PRE_DELIVERY_STATUSES.includes(outcome.status) &&
+                payment.status !== PaymentStatus.refunded
+            ) {
+                await tx.payment.update({
+                    where: { id: payment.id },
+                    data: {
+                        status:
+                            payment.provider === "COD"
+                                ? PaymentStatus.cod_pending
+                                : PaymentStatus.pending,
                     },
-                },
+                });
+            }
+
+            // Cancelling puts the units back on the shelf. `returned` deliberately
+            // does not — a returned garment may not be resellable, so restocking
+            // it stays an explicit inventory decision.
+            if (outcome.status === OrderStatus.cancelled) {
+                await this.moveStock(tx, orderId, existing.items, 1, "order_cancelled");
+            }
+
+            // ...and taking an order back out of cancelled has to take those units
+            // off the shelf again, or every reverted cancellation quietly inflates
+            // stock. Can push a variant negative, which is the honest answer: the
+            // units were promised twice.
+            if (existing.status === OrderStatus.cancelled) {
+                await this.moveStock(tx, orderId, existing.items, -1, "order_cancel_reverted");
+            }
+
+            if (!intent.skipLog) {
+                await tx.orderStatusLog.create({
+                    data: {
+                        orderId,
+                        status: outcome.status,
+                        note: intent.note ?? null,
+                        source: intent.source,
+                    },
+                });
+            }
+        }
+
+        const data: Prisma.OrderUpdateInput = {
+            ...intent.extraData,
+            status: outcome.status,
+            statusSource: outcome.source,
+            statusConflict: outcome.conflict,
+            statusConflictReason: outcome.conflictReason,
+            ...(intent.adminStatus !== undefined && {
+                adminStatus: intent.adminStatus,
+                adminStatusAt: new Date(),
+                adminStatusBy: intent.actorId ?? null,
+                adminStatusReason: intent.note ?? null,
+            }),
+            ...(intent.logisticsStatus !== undefined && {
+                logisticsStatus: intent.logisticsStatus,
+            }),
+            ...(intent.pin !== undefined && { adminStatusPinned: intent.pin }),
+        };
+
+        // An acknowledgement covers the conflict that was on the table when it was
+        // made. Anything new from RoadRush — or the disagreement going away —
+        // clears it, so a resolved conflict can never mask the next one.
+        const courierMoved =
+            intent.logisticsStatus !== undefined &&
+            intent.logisticsStatus !== existing.logisticsStatus;
+
+        if (intent.acknowledge) {
+            data.statusConflictAckAt = new Date();
+        } else if (courierMoved || !outcome.conflict) {
+            data.statusConflictAckAt = null;
+        }
+
+        const order = await tx.order.update({ where: { id: orderId }, data });
+
+        return { order, changed, outcome };
+    }
+
+    /**
+     * Move an order's units on or off the shelf and log why. `direction` is +1 to
+     * put them back (a cancellation) and -1 to take them again (that cancellation
+     * being undone).
+     */
+    private async moveStock(
+        tx: Prisma.TransactionClient,
+        orderId: string,
+        items: Array<{ variantId: string; quantity: number }>,
+        direction: 1 | -1,
+        reason: string
+    ): Promise<void> {
+        if (!items.length) return;
+
+        for (const item of items) {
+            await tx.productVariant.update({
+                where: { id: item.variantId },
+                data: { stockQty: { increment: direction * item.quantity } },
             });
-        });
+        }
 
-        // Notify the customer about the status change (fire-and-forget).
-        await this.notificationService.notifyOrderStatusChange({
-            userId: updated.userId,
-            orderId: updated.id,
-            orderCode: updated.orderCode,
-            status,
-            itemDetails: updated.itemDetails,
+        await tx.inventoryLog.createMany({
+            data: items.map((item) => ({
+                variantId: item.variantId,
+                changeQty: direction * item.quantity,
+                reason,
+                referenceId: orderId,
+            })),
         });
-
-        return updated;
     }
 
     async adminUpdatePaymentStatus(orderId: string, status: string) {
+        const order = await this.prisma.getClient().order.findUnique({
+            where: { id: orderId },
+            select: { status: true, userId: true, orderCode: true },
+        });
+
+        if (!order) {
+            throw new NotFoundError("Order not found");
+        }
+
         // Find existing payment for this order
         const payment = await this.prisma.getClient().payment.findFirst({
             where: { orderId },
@@ -678,12 +1020,39 @@ export class OrderService {
             );
         }
 
-        return await this.prisma.getClient().payment.update({
+        // Keep money in step with fulfilment — see PAYMENT_STATUS_PRECONDITIONS.
+        const requires = PAYMENT_STATUS_PRECONDITIONS[finalStatus as PaymentStatus];
+        if (!requires) {
+            throw new BadRequestError(`Payment cannot be set back to "${finalStatus}" by hand`);
+        }
+        if (!requires.includes(order.status)) {
+            throw new BadRequestError(
+                `Payment can only be marked "${finalStatus}" on a ${requires.join(" or ")} order — this one is ${order.status}`
+            );
+        }
+
+        const updated = await this.prisma.getClient().payment.update({
             where: { id: payment.id },
             data: {
                 status: finalStatus as PaymentStatus,
             },
         });
+
+        // A refund is the customer's money moving — they hear about it. Guarded on
+        // an actual change so re-saving the same status doesn't notify twice.
+        if (
+            updated.status === PaymentStatus.refunded &&
+            payment.status !== PaymentStatus.refunded
+        ) {
+            await this.notificationService.notifyOrderRefunded({
+                userId: order.userId,
+                orderId,
+                orderCode: order.orderCode,
+                amount: updated.amount.toString(),
+            });
+        }
+
+        return updated;
     }
 
     async syncOrderWithRoadRush(orderId: string) {
@@ -781,8 +1150,8 @@ export class OrderService {
             );
         }
 
-        // Map the partner status name onto our enum. Unknown names keep the
-        // current status rather than guessing — see roadrush-status.ts.
+        // Map the partner status name onto our enum. Unknown names leave RoadRush's
+        // recorded opinion untouched rather than guessing — see roadrush-status.ts.
         const mapped = mapRoadRushStatus(statusName);
         if (!mapped) {
             logger.warn("Unrecognised RoadRush status name — keeping current order status", {
@@ -790,67 +1159,193 @@ export class OrderService {
                 statusName,
             });
         }
-        const ourStatus: OrderStatus = mapped ? mapped.status : order.status;
 
-        // Update order, mirror the logistics/COD figures, and set sync time.
-        // NOTE: payment status is deliberately left untouched. `cod: true` only
-        // tells the rider to collect cash — RoadRush exposes the amount due
-        // (Cash_Collect) but no "collected" flag — so COD reconciliation stays
-        // a manual admin action.
-        const updated = await this.prisma.getClient().order.update({
-            where: { id: orderId },
-            data: {
-                status: ourStatus,
-                logisticsStatusName: statusName,
-                lastLogisticsSync: new Date(),
+        // Everything RoadRush tells us that is not the status itself. Written in
+        // the same transaction as the status so a refresh is all-or-nothing.
+        //
+        // NOTE: payment status is deliberately absent. `cod: true` only tells the
+        // rider to collect cash — RoadRush exposes the amount due (Cash_Collect)
+        // but no "collected" flag — so COD reconciliation stays a manual action
+        // except for the settle-on-delivered rule every path shares.
+        const mirrored: Prisma.OrderUpdateInput = {
+            logisticsStatusName: statusName,
+            lastLogisticsSync: new Date(),
 
-                // Logistics & COD figures reported by RoadRush
-                ...(rrOrder.Cash_Collect !== undefined && {
-                    cashCollectAmount: rrOrder.Cash_Collect,
-                }),
-                ...(rrOrder.Fee !== undefined && { deliveryFee: rrOrder.Fee }),
-                ...(rrOrder.COD_charge !== undefined && { codCharge: rrOrder.COD_charge }),
-                ...(rrOrder.Vat !== undefined && { vat: rrOrder.Vat }),
-                ...(rrOrder.Tax !== undefined && { tax: rrOrder.Tax }),
-                ...(rrOrder.distance_km !== undefined && { distanceKm: rrOrder.distance_km }),
-                ...(rrOrder.delivery_priority && {
-                    deliveryPriority: rrOrder.delivery_priority,
-                }),
-                ...(rrOrder.otp && { otp: rrOrder.otp }),
-                ...(rrOrder.rcv_pay !== undefined && { rcvPay: rrOrder.rcv_pay }),
-                ...(rrOrder.RequestDeliveryDate && {
-                    requestDeliveryDate: rrOrder.RequestDeliveryDate,
-                }),
+            // Logistics & COD figures reported by RoadRush
+            ...(rrOrder.Cash_Collect !== undefined && {
+                cashCollectAmount: rrOrder.Cash_Collect,
+            }),
+            ...(rrOrder.Fee !== undefined && { deliveryFee: rrOrder.Fee }),
+            ...(rrOrder.COD_charge !== undefined && { codCharge: rrOrder.COD_charge }),
+            ...(rrOrder.Vat !== undefined && { vat: rrOrder.Vat }),
+            ...(rrOrder.Tax !== undefined && { tax: rrOrder.Tax }),
+            ...(rrOrder.distance_km !== undefined && { distanceKm: rrOrder.distance_km }),
+            ...(rrOrder.delivery_priority && {
+                deliveryPriority: rrOrder.delivery_priority,
+            }),
+            ...(rrOrder.otp && { otp: rrOrder.otp }),
+            ...(rrOrder.rcv_pay !== undefined && { rcvPay: rrOrder.rcv_pay }),
+            ...(rrOrder.RequestDeliveryDate && {
+                requestDeliveryDate: rrOrder.RequestDeliveryDate,
+            }),
 
-                // Backfill missing details from RoadRush if available
-                ...(!order.customerFullName &&
-                    rrOrder.customer_full_name && {
-                        customerFullName: rrOrder.customer_full_name,
-                    }),
-                ...(!order.customerMobileNumber &&
-                    rrOrder.customer_mobile_number && {
-                        customerMobileNumber: rrOrder.customer_mobile_number,
-                    }),
-                ...(!order.customerEmail &&
-                    rrOrder.customer_email && { customerEmail: rrOrder.customer_email }),
-            },
-        });
+            // Backfill missing details from RoadRush if available
+            ...(!order.customerFullName &&
+                rrOrder.customer_full_name && {
+                    customerFullName: rrOrder.customer_full_name,
+                }),
+            ...(!order.customerMobileNumber &&
+                rrOrder.customer_mobile_number && {
+                    customerMobileNumber: rrOrder.customer_mobile_number,
+                }),
+            ...(!order.customerEmail &&
+                rrOrder.customer_email && { customerEmail: rrOrder.customer_email }),
+        };
+
+        const {
+            order: updated,
+            changed,
+            outcome,
+        } = await this.prisma.getClient().$transaction(async (tx) =>
+            this.applyOrderStatus(tx, orderId, {
+                source: StatusSource.roadrush,
+                ...(mapped && { logisticsStatus: mapped.status }),
+                extraData: mirrored,
+                skipLog: true,
+            })
+        );
 
         // Mirror the partner's status history into our own timeline.
         await this.syncStatusHistory(orderId, rrOrder.status_details);
 
-        // Only notify the customer when the status genuinely changed.
-        if (ourStatus !== order.status) {
+        // Only notify the customer when the effective status genuinely changed —
+        // RoadRush walking its own statuses backwards, or an admin holding the
+        // order at something else, must not turn into a stream of pings.
+        if (changed) {
             await this.notificationService.notifyOrderStatusChange({
                 userId: updated.userId,
                 orderId: updated.id,
                 orderCode: updated.orderCode,
-                status: ourStatus,
+                status: outcome.status,
                 itemDetails: updated.itemDetails,
             });
         }
 
         return updated;
+    }
+
+    /**
+     * Settle a status disagreement one way or the other.
+     *
+     * `accept` takes RoadRush's word for it — including the cancellations the
+     * resolver refuses to apply on its own, so this is the path that restocks
+     * units when a delivery really is off. `keep` pins our status instead and
+     * marks the conflict as seen; it comes back if RoadRush reports something
+     * new.
+     */
+    async adminResolveStatusConflict(
+        orderId: string,
+        adminId: string,
+        choice: "accept" | "keep",
+        note?: string
+    ) {
+        const order = await this.prisma.getClient().order.findUnique({
+            where: { id: orderId },
+            select: { statusConflict: true, logisticsStatus: true },
+        });
+
+        if (!order) throw new NotFoundError("Order not found");
+        if (!order.statusConflict) {
+            throw new BadRequestError("This order's status is not in conflict");
+        }
+
+        const reason = note?.trim() || null;
+
+        const {
+            order: updated,
+            changed,
+            outcome,
+        } = await this.prisma.getClient().$transaction(async (tx) => {
+            if (choice === "keep") {
+                return await this.applyOrderStatus(tx, orderId, {
+                    source: StatusSource.admin,
+                    actorId: adminId,
+                    note: reason,
+                    pin: true,
+                    acknowledge: true,
+                });
+            }
+
+            if (!order.logisticsStatus) {
+                throw new BadRequestError("RoadRush has not reported a status for this order yet");
+            }
+
+            // Forced on RoadRush's behalf: their status becomes our stated
+            // position, the pin comes off, and the consequences of landing
+            // there (restock, payment) run through the same path as always.
+            return await this.applyOrderStatus(tx, orderId, {
+                source: StatusSource.roadrush,
+                adminStatus: order.logisticsStatus,
+                actorId: adminId,
+                note: reason,
+                force: true,
+                pin: false,
+            });
+        });
+
+        if (changed) {
+            await this.notificationService.notifyOrderStatusChange({
+                userId: updated.userId,
+                orderId: updated.id,
+                orderCode: updated.orderCode,
+                status: outcome.status,
+                itemDetails: updated.itemDetails,
+                ...(reason ? { note: reason } : {}),
+            });
+        }
+
+        return updated;
+    }
+
+    /**
+     * Orders whose two statuses disagree and nobody has looked yet. The queue
+     * staff work through, same shape as the manual-shipping one.
+     */
+    async adminGetStatusConflicts(params?: { search?: string }) {
+        const where: Prisma.OrderWhereInput = {
+            statusConflict: true,
+            statusConflictAckAt: null,
+        };
+
+        if (params?.search?.trim()) {
+            const q = params.search.trim();
+            where.OR = [
+                { orderCode: { contains: q, mode: "insensitive" } },
+                { id: { contains: q, mode: "insensitive" } },
+                { customerFullName: { contains: q, mode: "insensitive" } },
+                { customerMobileNumber: { contains: q, mode: "insensitive" } },
+            ];
+        }
+
+        return await this.prisma.getClient().order.findMany({
+            where,
+            include: {
+                user: { select: { id: true, fullName: true, email: true, phone: true } },
+                items: { include: { product: true, variant: true } },
+                address: true,
+                payments: true,
+            },
+            orderBy: { lastLogisticsSync: "desc" },
+        });
+    }
+
+    /** Badge count for the dashboard — deliberately just a count. */
+    async adminGetStatusConflictCount(): Promise<{ pending: number }> {
+        const pending = await this.prisma.getClient().order.count({
+            where: { statusConflict: true, statusConflictAckAt: null },
+        });
+
+        return { pending };
     }
 
     /**
@@ -901,6 +1396,7 @@ export class OrderService {
                     status: mapped.status,
                     logisticsStatusName: detail.status_name,
                     note: detail.Description || null,
+                    source: StatusSource.roadrush,
                     createdAt,
                 },
             ];
