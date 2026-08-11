@@ -52,6 +52,12 @@ export const AppleAuthSchema = z.object({
     }),
 });
 
+export const FacebookAuthSchema = z.object({
+    body: z.object({
+        accessToken: z.string().min(1, "Access token is required"),
+    }),
+});
+
 export const SendOtpSchema = z.object({
     body: z.object({
         email: z.string().email("Invalid email address"),
@@ -71,6 +77,7 @@ export type ForgotPasswordInput = z.infer<typeof ForgotPasswordSchema>["body"];
 export type ResetPasswordInput = z.infer<typeof ResetPasswordSchema>["body"];
 export type GoogleAuthInput = z.infer<typeof GoogleAuthSchema>["body"];
 export type AppleAuthInput = z.infer<typeof AppleAuthSchema>["body"];
+export type FacebookAuthInput = z.infer<typeof FacebookAuthSchema>["body"];
 export type SendOtpInput = z.infer<typeof SendOtpSchema>["body"];
 export type VerifyOtpInput = z.infer<typeof VerifyOtpSchema>["body"];
 

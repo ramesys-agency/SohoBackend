@@ -41,6 +41,12 @@ const envSchema = z.object({
     GOOGLE_ANDROID_CLIENT_ID: z.string().optional(),
     // The app's bundle identifier (and any Services ID used for web sign-in).
     APPLE_CLIENT_ID: z.string().optional(),
+    // Facebook hands the client an opaque access token, not a signed JWT, so it
+    // can only be validated by asking Graph API about it. That call needs the
+    // app's own credentials, and the reply carries the app_id the token was
+    // minted for — which is what stops a token from another app being replayed.
+    FACEBOOK_APP_ID: z.string().optional(),
+    FACEBOOK_APP_SECRET: z.string().optional(),
 
     // Redis
     REDIS_ENABLED: z

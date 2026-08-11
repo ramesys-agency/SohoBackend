@@ -99,6 +99,29 @@ export class AuthController {
         }
     };
 
+    facebookLogin = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { accessToken } = req.body;
+            if (!accessToken) {
+                res.status(400).json({ message: "accessToken is required" });
+                return;
+            }
+
+            const result = await this.authService.facebookAuth({ accessToken });
+
+            res.status(200).json({
+                message: "Facebook Authentication successful",
+                data: {
+                    user: result.user,
+                    accessToken: result.accessToken,
+                    refreshToken: result.refreshToken,
+                },
+            });
+        } catch (error) {
+            next(error);
+        }
+    };
+
     refresh = async (req: Request, res: Response, next: NextFunction) => {
         try {
             const refreshToken = req.body.refreshToken;

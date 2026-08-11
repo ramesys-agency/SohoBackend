@@ -16,11 +16,14 @@ import type {
     ResetPasswordInput,
     GoogleAuthInput,
     AppleAuthInput,
+    FacebookAuthInput,
     SendOtpInput,
     VerifyOtpInput,
 } from "./auth.schema.js";
 
 const googleClient = new OAuth2Client();
+
+const FACEBOOK_GRAPH_VERSION = "v21.0";
 
 export class AuthService {
     private prisma: PrismaClient;
@@ -351,6 +354,183 @@ export class AuthService {
                 error: error instanceof Error ? error.message : String(error),
             });
             throw new UnauthorizedError("Invalid Apple token");
+        }
+    }
+
+    async facebookAuth(input: FacebookAuthInput) {
+        const { accessToken: fbAccessToken } = input;
+
+        // Same fail-closed rule as Google and Apple: with no app credentials
+        // there is no way to check who the token was issued to, so there is
+        // nothing safe to do but refuse.
+        const appId = config.auth.facebookAppId;
+        const appSecret = config.auth.facebookAppSecret;
+        if (!appId || !appSecret) {
+            logger.error(
+                "Facebook sign-in attempted but FACEBOOK_APP_ID/FACEBOOK_APP_SECRET are not configured — rejecting"
+            );
+            throw new UnauthorizedError("Facebook sign-in is not available");
+        }
+
+        try {
+            // Step 1 — ask Facebook what this token actually is. A token is only
+            // acceptable if Facebook says it is valid, unexpired, and was minted
+            // for *our* app; otherwise a token stolen from any other Facebook app
+            // would be enough to sign in as that user here.
+            const debugUrl = new URL(`https://graph.facebook.com/debug_token`);
+            debugUrl.searchParams.set("input_token", fbAccessToken);
+            debugUrl.searchParams.set("access_token", `${appId}|${appSecret}`);
+
+            const debugRes = await fetch(debugUrl);
+            if (!debugRes.ok) {
+                throw new UnauthorizedError("Invalid Facebook token");
+            }
+
+            const debugBody = (await debugRes.json()) as {
+                data?: {
+                    app_id?: string;
+                    is_valid?: boolean;
+                    user_id?: string;
+                    expires_at?: number;
+                };
+            };
+            const debugData = debugBody.data;
+
+            if (!debugData?.is_valid || !debugData.user_id) {
+                throw new UnauthorizedError("Invalid Facebook token");
+            }
+            if (debugData.app_id !== appId) {
+                logger.warn("Facebook token presented for a different app", {
+                    tokenAppId: debugData.app_id,
+                });
+                throw new UnauthorizedError("Invalid Facebook token");
+            }
+            // expires_at of 0 means a non-expiring token; anything else in the
+            // past is a token Facebook still describes but no longer honours.
+            if (debugData.expires_at && debugData.expires_at * 1000 < Date.now()) {
+                throw new UnauthorizedError("Facebook token has expired");
+            }
+
+            // Step 2 — read the profile. appsecret_proof is Facebook's defence
+            // against a leaked token being used away from our servers: it proves
+            // the caller also holds the app secret.
+            const appSecretProof = crypto
+                .createHmac("sha256", appSecret)
+                .update(fbAccessToken)
+                .digest("hex");
+
+            const profileUrl = new URL(
+                `https://graph.facebook.com/${FACEBOOK_GRAPH_VERSION}/me`
+            );
+            profileUrl.searchParams.set("fields", "id,name,email,picture.type(large)");
+            profileUrl.searchParams.set("access_token", fbAccessToken);
+            profileUrl.searchParams.set("appsecret_proof", appSecretProof);
+
+            const profileRes = await fetch(profileUrl);
+            if (!profileRes.ok) {
+                throw new UnauthorizedError("Invalid Facebook token");
+            }
+
+            const profile = (await profileRes.json()) as {
+                id?: string;
+                name?: string;
+                email?: string;
+                picture?: { data?: { url?: string; is_silhouette?: boolean } };
+            };
+
+            if (!profile.id || profile.id !== debugData.user_id) {
+                throw new UnauthorizedError("Invalid Facebook token");
+            }
+
+            // Facebook is the one provider here that can legitimately return no
+            // email — the user may have declined the permission, or signed up
+            // with a phone number only. Accounts are keyed by email, so there is
+            // no way to continue; say so plainly instead of failing as "invalid
+            // token", which would send the user round the same loop.
+            if (!profile.email) {
+                throw new BadRequestError(
+                    "Your Facebook account did not share an email address. Please sign in with Google or use email and password."
+                );
+            }
+
+            const email = profile.email;
+            const providerId = profile.id;
+            const name = profile.name;
+            // The silhouette is Facebook's default placeholder, not a real
+            // avatar — storing it would just pin a grey blob to the profile.
+            const picture = profile.picture?.data?.is_silhouette
+                ? undefined
+                : profile.picture?.data?.url;
+
+            let user = await this.prisma.user.findUnique({
+                where: { email },
+            });
+
+            if (user?.isDeleted) {
+                throw new UnauthorizedError("This account has been deleted");
+            }
+
+            if (!user) {
+                user = await this.prisma.user.create({
+                    data: {
+                        email,
+                        fullName: name || "Facebook User",
+                        avatar: picture ?? null,
+                        authProvider: "facebook",
+                        authProviderId: providerId,
+                        role: "customer",
+                        // Facebook only exposes an email once it has been
+                        // confirmed on their side.
+                        isVerified: true,
+                    },
+                });
+            } else if (!user.authProviderId) {
+                // Existing email-password user linking Facebook for the first time
+                user = await this.prisma.user.update({
+                    where: { email },
+                    data: {
+                        authProvider: "facebook",
+                        authProviderId: providerId,
+                        isVerified: true,
+                        ...(!user.avatar && picture ? { avatar: picture } : {}),
+                    },
+                });
+            } else if (!user.avatar && picture) {
+                user = await this.prisma.user.update({
+                    where: { email },
+                    data: { avatar: picture },
+                });
+            }
+
+            const accessToken = AuthUtils.generateAccessToken(
+                { userId: user.id, role: user.role },
+                config.auth.jwtSecret
+            );
+
+            const refreshToken = AuthUtils.generateRefreshToken(
+                { userId: user.id, role: user.role },
+                config.auth.jwtSecret
+            );
+
+            return {
+                user: {
+                    id: user.id,
+                    email: user.email,
+                    fullName: user.fullName,
+                    role: user.role,
+                    avatar: user.avatar,
+                },
+                accessToken,
+                refreshToken,
+            };
+        } catch (error) {
+            // Decisions ("account deleted", "no email shared") are answers, not
+            // verification failures — they must reach the client unchanged.
+            if (error instanceof UnauthorizedError || error instanceof BadRequestError) throw error;
+            logger.warn("Facebook Auth Error", {
+                error: error instanceof Error ? error.message : String(error),
+            });
+            throw new UnauthorizedError("Invalid Facebook token");
         }
     }
 

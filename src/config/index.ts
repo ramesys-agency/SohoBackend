@@ -60,6 +60,8 @@ export const config = {
             env.GOOGLE_ANDROID_CLIENT_ID
         ),
         appleClientIds: toIdList(env.APPLE_CLIENT_ID),
+        facebookAppId: env.FACEBOOK_APP_ID,
+        facebookAppSecret: env.FACEBOOK_APP_SECRET,
     },
 
     redis: {
