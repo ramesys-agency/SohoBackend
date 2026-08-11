@@ -1,3 +1,6 @@
+/// A collection is created 1:1 with the placement that owns it — the admin
+/// never makes one on its own. name/slug live here so the placement's identity
+/// is a real, linkable handle, and coupons keep targeting collections.
 model Collection {
     id       String  @id @default(uuid())
     name     String
@@ -7,11 +10,9 @@ model Collection {
     gender   GenderType[]
     products ProductCollection[]
 
-    createdAt            DateTime              @default(now())
-    collectionPlacements CollectionPlacement[]
-    coupons              CouponCollection[]
-
-    homePromos           HomePromo[]
+    createdAt DateTime             @default(now())
+    placement CollectionPlacement?
+    coupons   CouponCollection[]
 }
 
 
@@ -21,24 +22,35 @@ model ProductCollection {
     displayOrder Int    @default(0)
 
     product    Product    @relation(fields: [productId], references: [id])
-    collection Collection @relation(fields: [collectionId], references: [id])
+    collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
 
     createdAt DateTime @default(now())
 
     @@id([productId, collectionId])
 }
 
+/// One row per page+section slot on the storefront. Two placements built from
+/// the same source still get their own name, image, product list and slug —
+/// "Best Sellers" on MEN and on WOMEN are separate, independently editable rows.
 model CollectionPlacement {
     id String @id @default(uuid())
 
-    collectionId String
+    /// Unique: a collection belongs to exactly one placement.
+    collectionId String     @unique
     collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+    description String?
+
+    /// When set, tapping the placement deep-links to this product instead of
+    /// opening its product list. Replaces HomePromo's PRODUCT content type.
+    productId String?
+    product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
 
     isBanner Boolean @default(false)
     imageUrl String?
 
     page    PageType
-    section SectionType?
+    section SectionType
 
     displayOrder Int     @default(0)
     isActive     Boolean @default(true)
@@ -47,7 +59,7 @@ model CollectionPlacement {
 
     products CollectionPlacementProduct[]
 
-    @@index([page, section])
+    @@index([page, section, displayOrder])
 }
 
 model CollectionPlacementProduct {

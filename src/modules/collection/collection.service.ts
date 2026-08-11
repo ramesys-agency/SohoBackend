@@ -1,7 +1,9 @@
-import { PrismaService } from "../../core/services/index.js";
 import { GenderType, Prisma, PageType, SectionType } from "@prisma/client";
 import { prisma } from "../../config/prisma.js";
 
+/// Collections are created and destroyed by the placement module — there is no
+/// standalone "create collection" path. What lives here is reading them and
+/// editing the product list, which stays mirrored with the owning placement.
 
 export class CollectionService {
     private prisma = prisma;
@@ -61,9 +63,7 @@ export class CollectionService {
                 : undefined;
 
         if (placementWhere) {
-            where.collectionPlacements = {
-                some: placementWhere,
-            };
+            where.placement = { is: placementWhere };
         }
 
         const page = parseInt(query.page || "1", 10);
@@ -75,11 +75,8 @@ export class CollectionService {
                 where,
                 orderBy: { createdAt: "desc" },
                 include: {
-                    collectionPlacements: {
-                        ...(placementWhere ? { where: placementWhere } : {}),
-                        orderBy: { displayOrder: "asc" },
+                    placement: {
                         include: {
-                            collection: true,
                             _count: { select: { products: true } },
                         },
                     },
@@ -113,30 +110,8 @@ export class CollectionService {
         };
     }
 
-    async createCollection(data: { name: string; gender?: GenderType[]; isActive?: boolean }) {
-        const slug = data.name
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, "-")
-            .replace(/(^-|-$)+/g, "");
-
-        let finalSlug = slug;
-        let counter = 1;
-        while (await this.prisma.getClient().collection.findFirst({ where: { slug: finalSlug } })) {
-            finalSlug = `${slug}-${counter++}`;
-        }
-
-        const collection = await this.prisma.getClient().collection.create({
-            data: {
-                name: data.name,
-                slug: finalSlug,
-                gender: { set: data.gender ?? [] },
-                isActive: data.isActive ?? true,
-            },
-        });
-
-        return { success: true, data: collection };
-    }
-
+    /// Products stay mirrored: the collection is what coupons and slug lookups
+    /// see, the placement is what the storefront renders.
     async addProductsToCollection(collectionId: string, productIds: string[]) {
         if (!productIds || !Array.isArray(productIds) || productIds.length === 0) {
             throw new Error("Product IDs are required and must be an array");
@@ -144,21 +119,30 @@ export class CollectionService {
 
         const collection = await this.prisma.getClient().collection.findUnique({
             where: { id: collectionId },
+            include: { placement: { select: { id: true } } },
         });
 
         if (!collection) {
             throw new Error("Collection not found");
         }
 
-        const data = productIds.map((productId) => ({
-            collectionId,
-            productId,
-        }));
+        const client = this.prisma.getClient();
+        const placementId = collection.placement?.id;
 
-        await this.prisma.getClient().productCollection.createMany({
-            data,
-            skipDuplicates: true,
-        });
+        await client.$transaction([
+            client.productCollection.createMany({
+                data: productIds.map((productId) => ({ collectionId, productId })),
+                skipDuplicates: true,
+            }),
+            ...(placementId
+                ? [
+                      client.collectionPlacementProduct.createMany({
+                          data: productIds.map((productId) => ({ placementId, productId })),
+                          skipDuplicates: true,
+                      }),
+                  ]
+                : []),
+        ]);
 
         return {
             success: true,
@@ -173,18 +157,28 @@ export class CollectionService {
 
         const collection = await this.prisma.getClient().collection.findUnique({
             where: { id: collectionId },
+            include: { placement: { select: { id: true } } },
         });
 
         if (!collection) {
             throw new Error("Collection not found");
         }
 
-        await this.prisma.getClient().productCollection.deleteMany({
-            where: {
-                collectionId,
-                productId: { in: productIds },
-            },
-        });
+        const client = this.prisma.getClient();
+        const placementId = collection.placement?.id;
+
+        await client.$transaction([
+            client.productCollection.deleteMany({
+                where: { collectionId, productId: { in: productIds } },
+            }),
+            ...(placementId
+                ? [
+                      client.collectionPlacementProduct.deleteMany({
+                          where: { placementId, productId: { in: productIds } },
+                      }),
+                  ]
+                : []),
+        ]);
 
         return {
             success: true,
@@ -237,14 +231,14 @@ export class CollectionService {
         return { success: true, data: updated, message: "Collection updated successfully" };
     }
 
+    /// Deleting a collection takes its placement with it — cascades handle the
+    /// product links, the placement and its curated list.
     async deleteCollection(id: string) {
         const existing = await this.prisma.getClient().collection.findUnique({ where: { id } });
         if (!existing) {
             throw new Error("Collection not found");
         }
 
-        // Remove all product associations first, then delete the collection
-        await this.prisma.getClient().productCollection.deleteMany({ where: { collectionId: id } });
         await this.prisma.getClient().collection.delete({ where: { id } });
 
         return { success: true, message: "Collection deleted successfully" };

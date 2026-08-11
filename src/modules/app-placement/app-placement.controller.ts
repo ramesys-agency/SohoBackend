@@ -1,66 +1,121 @@
 import type { NextFunction, Request, Response } from "express";
 import { AppPlacementService } from "./app-placement.service.js";
-import { CollectionService } from "../collection/collection.service.js";
 import { PageType, SectionType } from "@prisma/client";
 import { StorageService } from "../../core/services/storage.service.js";
 import { randomBytes } from "crypto";
 
+const toBool = (value: unknown): boolean | undefined => {
+    if (value === undefined || value === null || value === "") return undefined;
+    return value === true || value === "true";
+};
+
 export class AppPlacementController {
     private appPlacementService = new AppPlacementService();
-    private collectionService = new CollectionService();
     private storageService = new StorageService();
+
+    /// Multipart form fields arrive as strings, so the file is uploaded here and
+    /// the resulting URL handed to the service as a plain value.
+    private async resolveImage(req: Request, folder: string, page?: string): Promise<string | undefined> {
+        if (!req.file) {
+            return (req.body as { image?: string }).image;
+        }
+
+        const fileExt = req.file.originalname.split(".").pop();
+        const randomId = randomBytes(4).toString("hex");
+        const key = `${folder}/${page || "placement"}_${randomId}.${fileExt}`;
+
+        return this.storageService.uploadFile(req.file.buffer, key, req.file.mimetype);
+    }
+
+    getPlacements = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+        try {
+            const query = req.query as { page?: string; section?: string; isActive?: string };
+
+            const result = await this.appPlacementService.getPlacements({
+                page: query.page ? (query.page as PageType) : undefined,
+                section: query.section ? (query.section as SectionType) : undefined,
+                isActive: toBool(query.isActive),
+            });
+
+            res.status(200).json(result);
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    getPlacement = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+        try {
+            const id = req.params["id"] as string;
+            const result = await this.appPlacementService.getPlacementById(id);
+            res.status(200).json(result);
+        } catch (error) {
+            next(error);
+        }
+    };
 
     createPlacement = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
         try {
             const data = req.body as {
-                collectionId?: string;
-                collectionName?: string;
-                page: PageType;
+                name?: string;
+                description?: string;
+                page?: PageType;
                 section?: SectionType;
+                productId?: string;
                 isBanner?: string | boolean;
                 isActive?: string | boolean;
-                image?: string;
+                displayOrder?: string;
+                sourcePlacementId?: string;
             };
 
-            // Resolve collectionId — create a new collection if only a name was supplied
-            let collectionId = data.collectionId;
-            if (!collectionId && data.collectionName) {
-                const created = await this.collectionService.createCollection({
-                    name: data.collectionName,
-                });
-                collectionId = created.data.id;
+            if (!data.name?.trim()) {
+                res.status(400).json({ success: false, message: "name is required" });
+                return;
             }
-
-            if (!collectionId) {
-                res.status(400).json({ success: false, message: "collectionId or collectionName is required" });
+            if (!data.page) {
+                res.status(400).json({ success: false, message: "page is required" });
+                return;
+            }
+            if (!data.section) {
+                res.status(400).json({ success: false, message: "section is required" });
                 return;
             }
 
-            let imageUrl = data.image;
-
-            if (req.file) {
-                const fileExt = req.file.originalname.split(".").pop();
-                const randomId = randomBytes(4).toString("hex");
-                const folder = `placements/collection-${collectionId}`;
-                const key = `${folder}/${data.page}_${randomId}.${fileExt}`;
-
-                imageUrl = await this.storageService.uploadFile(
-                    req.file.buffer,
-                    key,
-                    req.file.mimetype
-                );
-            }
-
-            const isBanner = data.isBanner === "true" || data.isBanner === true;
-            const isActive = data.isActive === undefined || data.isActive === "true" || data.isActive === true;
+            const imageUrl = await this.resolveImage(req, "placements", data.page);
 
             const result = await this.appPlacementService.createPlacement({
-                collectionId,
+                name: data.name,
+                description: data.description,
                 page: data.page,
                 section: data.section,
-                isBanner: isBanner,
-                isActive: isActive,
+                productId: data.productId || undefined,
+                isBanner: toBool(data.isBanner),
+                isActive: toBool(data.isActive),
                 image: imageUrl,
+                displayOrder: data.displayOrder ? Number(data.displayOrder) : undefined,
+                sourcePlacementId: data.sourcePlacementId || undefined,
+            });
+
+            res.status(201).json(result);
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    duplicatePlacement = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+        try {
+            const id = req.params["id"] as string;
+            const data = req.body as {
+                name?: string;
+                page?: PageType;
+                section?: SectionType;
+                isActive?: string | boolean;
+            };
+
+            const result = await this.appPlacementService.duplicatePlacement(id, {
+                name: data.name,
+                page: data.page,
+                section: data.section,
+                isActive: toBool(data.isActive),
             });
 
             res.status(201).json(result);
@@ -73,45 +128,41 @@ export class AppPlacementController {
         try {
             const id = req.params["id"] as string;
             const data = req.body as {
-                collectionId?: string;
+                name?: string;
+                description?: string;
                 page?: PageType;
-                section?: SectionType | null;
+                section?: SectionType;
+                productId?: string;
                 isBanner?: string | boolean;
                 isActive?: string | boolean;
-                image?: string; // If sent as a string URL instead of a file
+                displayOrder?: string;
             };
 
-            let imageUrl = data.image;
+            const imageUrl = await this.resolveImage(req, `placements/update-${id}`, data.page);
 
-            if (req.file) {
-                const fileExt = req.file.originalname.split(".").pop();
-                const randomId = randomBytes(4).toString("hex");
-                const folder = `placements/update-${id}`;
-                const key = `${data.page || "placement"}_${randomId}.${fileExt}`;
-                
-                imageUrl = await this.storageService.uploadFile(
-                    req.file.buffer,
-                    `${folder}/${key}`,
-                    req.file.mimetype
-                );
-            }
-
-            const updatePayload: any = {
-                collectionId: data.collectionId,
+            const result = await this.appPlacementService.updatePlacement(id, {
+                name: data.name,
+                description: data.description,
                 page: data.page,
-                section: (data.section as unknown as string) === "null" ? null : data.section,
+                section: data.section,
+                // An explicit empty string clears the deep-link.
+                productId: data.productId === undefined ? undefined : data.productId || null,
+                isBanner: toBool(data.isBanner),
+                isActive: toBool(data.isActive),
                 image: imageUrl,
-            };
+                displayOrder: data.displayOrder ? Number(data.displayOrder) : undefined,
+            });
 
-            if (data.isBanner !== undefined) {
-                updatePayload.isBanner = data.isBanner === "true" || data.isBanner === true;
-            }
+            res.status(200).json(result);
+        } catch (error) {
+            next(error);
+        }
+    };
 
-            if (data.isActive !== undefined) {
-                updatePayload.isActive = data.isActive === "true" || data.isActive === true;
-            }
-
-            const result = await this.appPlacementService.updatePlacement(id, updatePayload);
+    reorderPlacements = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+        try {
+            const { placements } = req.body as { placements: { id: string; displayOrder: number }[] };
+            const result = await this.appPlacementService.reorderPlacements(placements);
             res.status(200).json(result);
         } catch (error) {
             next(error);
@@ -122,16 +173,6 @@ export class AppPlacementController {
         try {
             const id = req.params["id"] as string;
             const result = await this.appPlacementService.deletePlacement(id);
-            res.status(200).json(result);
-        } catch (error) {
-            next(error);
-        }
-    };
-
-    getPlacement = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-        try {
-            const id = req.params["id"] as string;
-            const result = await this.appPlacementService.getPlacementById(id);
             res.status(200).json(result);
         } catch (error) {
             next(error);

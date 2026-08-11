@@ -22,7 +22,8 @@ model Product {
     priceHistory      ProductPriceHistory[]
     sizeCharts        SizeChart[]
 
-    homePromos        HomePromo[]
+    /// Placements that deep-link straight to this product.
+    linkedPlacements CollectionPlacement[]
 
     createdAt DateTime   @default(now())
     updatedAt DateTime   @updatedAt

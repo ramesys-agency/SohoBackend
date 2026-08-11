@@ -160,210 +160,208 @@ async function main() {
     }
 
     // ------------------------
-    // COLLECTIONS
+    // PLACEMENTS (each owns its own collection, 1:1)
+    // Every page+section slot is its own editable entity: own name, slug,
+    // image and product list. "Best Sellers" on MEN and on WOMEN are two
+    // separate rows that an admin can rename or re-curate independently.
     // ------------------------
-    console.log("📦 Seeding Collections...");
-    const collectionData = [
-        { name: "Best Sellers", slug: "best-sellers", gender: ["MEN", "WOMEN", "KIDS"] },
-        { name: "New Arrivals", slug: "new-arrivals", gender: ["MEN", "WOMEN", "KIDS"] },
-        { name: "Summer Sale 2024", slug: "summer-sale", gender: ["MEN", "WOMEN", "KIDS"] },
-        { name: "Men's Premium", slug: "men-premium", gender: ["MEN"] },
-        { name: "Women's Trends", slug: "women-trends", gender: ["WOMEN"] },
-        { name: "Kids Playroom", slug: "kids-playroom", gender: ["KIDS"] },
-        { name: "Trending Now", slug: "trending-now", gender: ["MEN", "WOMEN", "KIDS"] },
-        { name: "Budget Buys", slug: "budget-buys", gender: ["MEN", "WOMEN", "KIDS"] },
-        { name: "Premium Collection", slug: "premium-collection", gender: ["MEN", "WOMEN", "KIDS"] },
-        { name: "Festive Deals", slug: "festive-deals", gender: ["MEN", "WOMEN", "KIDS"] },
-        { name: "Office Basics", slug: "office-basics", gender: ["MEN", "WOMEN", "KIDS"] },
-        { name: "Everyday Essentials", slug: "everyday-essentials", gender: ["MEN", "WOMEN", "KIDS"] },
-        { name: "Limited Edition", slug: "limited-edition", gender: ["MEN", "WOMEN", "KIDS"] },
-    ];
+    console.log("🖼️ Seeding Placements & their Collections...");
 
-    const collectionMap: Record<string, any> = {};
-    for (const data of collectionData) {
-        const col = await prisma.collection.upsert({
-            where: { slug: data.slug },
-            update: { gender: { set: data.gender as any } },
-            create: {
-                name: data.name,
-                slug: data.slug,
-                gender: { set: data.gender as any },
-            },
-        });
-        collectionMap[data.slug] = col;
-    }
-
-    // ------------------------
-    // PLACEMENTS (Banners & Home Structure)
-    // ------------------------
-    console.log("🖼️ Seeding Placements...");
-    const placements = [
-        // HOME PAGE
+    const placementSeeds = [
+        // ---------- HOME ----------
         {
+            slug: "summer-sale-2024",
             page: "HOME",
-            section: "TOP_BANNER",
-            colSlug: "summer-sale",
-            isBanner: true,
+            section: "HERO",
+            name: "Summer Sale 2024",
+            description: "Up to 50% off across the summer range.",
+            theme: "summer-sale",
             order: 1,
-            text: "SUMMER SALE - 50% OFF",
+            isBanner: true,
         },
         {
+            slug: "women-fashionable-top",
+            page: "HOME",
+            section: "FEATURED_ROW",
+            name: "Women Fashionable Top",
+            description:
+                "This dress embodies sustainable fashion practices, woven from eco-friendly materials and produced with ethical craftsmanship.",
+            theme: "premium-collection",
+            order: 2,
+            isBanner: false,
+        },
+        {
+            slug: "fashionable-dress",
+            page: "HOME",
+            section: "GRID_SECTION",
+            name: "Fashionable Dress",
+            description:
+                "Festive-ready silhouettes cut from breathable fabric, finished by hand.",
+            theme: "festive-deals",
+            order: 3,
+            isBanner: false,
+        },
+        {
+            slug: "luxurious-gown",
             page: "HOME",
             section: "MID_BANNER",
-            colSlug: "new-arrivals",
-            isBanner: true,
-            order: 2,
-            text: "CHECK NEW ARRIVALS",
-        },
-        {
-            page: "HOME",
-            section: "FEATURED_ROW",
-            colSlug: "best-sellers",
-            isBanner: false,
-            order: 3,
-            text: "BEST SELLERS",
-        },
-
-        // MEN PAGE
-        {
-            page: "MEN",
-            section: "TOP_BANNER",
-            colSlug: "men-premium",
-            isBanner: true,
-            order: 1,
-            text: "MEN'S PREMIUM COLLECTION",
-        },
-
-        // WOMEN PAGE
-        {
-            page: "WOMEN",
-            section: "TOP_BANNER",
-            colSlug: "women-trends",
-            isBanner: true,
-            order: 1,
-            text: "WOMEN'S LATEST TRENDS",
-        },
-
-        // KIDS PAGE
-        {
-            page: "KIDS",
-            section: "TOP_BANNER",
-            colSlug: "kids-playroom",
-            isBanner: true,
-            order: 1,
-            text: "KIDS PLAYROOM FAVORITES",
-        },
-
-        // ADDITIONAL PLACEMENTS
-        {
-            page: "HOME",
-            section: "GRID_SECTION",
-            colSlug: "trending-now",
-            isBanner: false,
+            name: "Luxurious Gown",
+            description:
+                "Statement pieces for the evening, made in small runs from premium cloth.",
+            theme: "premium-collection",
             order: 4,
-            text: "TRENDING NOW",
+            isBanner: false,
         },
         {
+            slug: "fashionable-heels",
+            page: "HOME",
+            section: "SEE_ALL",
+            name: "Fashionable Heels",
+            description: "Fresh drops landing every week — see what just arrived.",
+            theme: "new-arrivals",
+            order: 5,
+            isBanner: false,
+        },
+        {
+            // The home screen renders this one as its own product grid rather
+            // than a promo card, matched by name. The slug is what the admin's
+            // own uniqueSlug() produces for "Best Sellers", so seeding adopts a
+            // hand-created row instead of making a second one beside it.
+            slug: "best-sellers",
             page: "HOME",
             section: "GRID_SECTION",
-            colSlug: "budget-buys",
+            name: "Best Sellers",
+            description: "What everyone is buying right now.",
+            theme: "best-sellers",
+            order: 6,
             isBanner: false,
-            order: 5,
-            text: "BUDGET BUYS",
         },
         {
-            page: "OFFER",
-            section: "TOP_BANNER",
-            colSlug: "festive-deals",
-            isBanner: true,
-            order: 1,
-            text: "FESTIVE MEGA DEALS",
-        },
-        {
-            page: "MEN",
-            section: "FEATURED_ROW",
-            colSlug: "office-basics",
+            slug: "trending-now-home",
+            page: "HOME",
+            section: "GRID_SECTION",
+            name: "Trending Now",
+            description: "Picking up speed this week.",
+            theme: "trending-now",
+            order: 7,
             isBanner: false,
-            order: 2,
-            text: "OFFICE BASICS FOR MEN",
         },
-        // MEN GRID
-        { page: "MEN", section: "GRID_SECTION", colSlug: "new-arrivals", isBanner: false, order: 3, text: "NEW ARRIVALS" },
-        { page: "MEN", section: "GRID_SECTION", colSlug: "best-sellers", isBanner: false, order: 4, text: "BEST SELLERS" },
-        { page: "MEN", section: "GRID_SECTION", colSlug: "trending-now", isBanner: false, order: 5, text: "TRENDING" },
-        { page: "MEN", section: "GRID_SECTION", colSlug: "budget-buys", isBanner: false, order: 6, text: "BUDGET BUYS" },
-        { page: "MEN", section: "GRID_SECTION", colSlug: "everyday-essentials", isBanner: false, order: 7, text: "EVERYDAY" },
-        { page: "MEN", section: "GRID_SECTION", colSlug: "limited-edition", isBanner: false, order: 8, text: "LIMITED" },
 
-        {
-            page: "WOMEN",
-            section: "FEATURED_ROW",
-            colSlug: "premium-collection",
-            isBanner: false,
-            order: 2,
-            text: "PREMIUM SELECTION",
-        },
-        // WOMEN GRID
-        { page: "WOMEN", section: "GRID_SECTION", colSlug: "new-arrivals", isBanner: false, order: 3, text: "NEW ARRIVALS" },
-        { page: "WOMEN", section: "GRID_SECTION", colSlug: "best-sellers", isBanner: false, order: 4, text: "BEST SELLERS" },
-        { page: "WOMEN", section: "GRID_SECTION", colSlug: "trending-now", isBanner: false, order: 5, text: "TRENDING" },
-        { page: "WOMEN", section: "GRID_SECTION", colSlug: "summer-sale", isBanner: false, order: 6, text: "SUMMER SALE" },
-        { page: "WOMEN", section: "GRID_SECTION", colSlug: "everyday-essentials", isBanner: false, order: 7, text: "EVERYDAY" },
-        { page: "WOMEN", section: "GRID_SECTION", colSlug: "limited-edition", isBanner: false, order: 8, text: "LIMITED" },
+        // ---------- MEN ----------
+        { slug: "mens-premium", page: "MEN", section: "HERO", name: "Men's Premium", description: "The considered end of the menswear range.", theme: "premium-collection", order: 1, isBanner: true },
+        { slug: "office-basics-men", page: "MEN", section: "FEATURED_ROW", name: "Office Basics for Men", description: "Formal staples that survive the whole week.", theme: "office-basics", order: 2, isBanner: false },
+        { slug: "new-arrivals-men", page: "MEN", section: "GRID_SECTION", name: "New Arrivals — Men", description: null, theme: "new-arrivals", order: 3, isBanner: false },
+        { slug: "best-sellers-men", page: "MEN", section: "GRID_SECTION", name: "Best Sellers — Men", description: null, theme: "best-sellers", order: 4, isBanner: false },
+        { slug: "trending-men", page: "MEN", section: "GRID_SECTION", name: "Trending — Men", description: null, theme: "trending-now", order: 5, isBanner: false },
+        { slug: "budget-buys-men", page: "MEN", section: "GRID_SECTION", name: "Budget Buys — Men", description: null, theme: "budget-buys", order: 6, isBanner: false },
+        { slug: "everyday-essentials-men", page: "MEN", section: "GRID_SECTION", name: "Everyday Essentials — Men", description: null, theme: "everyday-essentials", order: 7, isBanner: false },
+        { slug: "limited-edition-men", page: "MEN", section: "GRID_SECTION", name: "Limited Edition — Men", description: null, theme: "limited-edition", order: 8, isBanner: false },
 
-        // KIDS GRID
-        { page: "KIDS", section: "GRID_SECTION", colSlug: "new-arrivals", isBanner: false, order: 2, text: "NEW ARRIVALS" },
-        { page: "KIDS", section: "GRID_SECTION", colSlug: "best-sellers", isBanner: false, order: 3, text: "BEST SELLERS" },
-        { page: "KIDS", section: "GRID_SECTION", colSlug: "trending-now", isBanner: false, order: 4, text: "TRENDING" },
-        { page: "KIDS", section: "GRID_SECTION", colSlug: "festive-deals", isBanner: false, order: 5, text: "FESTIVE" },
-        { page: "KIDS", section: "GRID_SECTION", colSlug: "budget-buys", isBanner: false, order: 6, text: "BUDGET BUYS" },
-        { page: "KIDS", section: "GRID_SECTION", colSlug: "everyday-essentials", isBanner: false, order: 7, text: "EVERYDAY" },
-    ];
+        // ---------- WOMEN ----------
+        { slug: "womens-latest-trends", page: "WOMEN", section: "HERO", name: "Women's Latest Trends", description: "This season, as it is actually being worn.", theme: "trending-now", order: 1, isBanner: true },
+        { slug: "premium-selection-women", page: "WOMEN", section: "FEATURED_ROW", name: "Premium Selection — Women", description: "Elevated pieces worth the shelf space.", theme: "premium-collection", order: 2, isBanner: false },
+        { slug: "new-arrivals-women", page: "WOMEN", section: "GRID_SECTION", name: "New Arrivals — Women", description: null, theme: "new-arrivals", order: 3, isBanner: false },
+        { slug: "best-sellers-women", page: "WOMEN", section: "GRID_SECTION", name: "Best Sellers — Women", description: null, theme: "best-sellers", order: 4, isBanner: false },
+        { slug: "summer-sale-women", page: "WOMEN", section: "GRID_SECTION", name: "Summer Sale — Women", description: null, theme: "summer-sale", order: 5, isBanner: false },
+        { slug: "everyday-essentials-women", page: "WOMEN", section: "GRID_SECTION", name: "Everyday Essentials — Women", description: null, theme: "everyday-essentials", order: 6, isBanner: false },
+        { slug: "limited-edition-women", page: "WOMEN", section: "GRID_SECTION", name: "Limited Edition — Women", description: null, theme: "limited-edition", order: 7, isBanner: false },
 
-    for (const p of placements) {
-        const col = collectionMap[p.colSlug];
-        if (!col) continue;
+        // ---------- KIDS ----------
+        { slug: "kids-playroom", page: "KIDS", section: "HERO", name: "Kids Playroom Favourites", description: "Built for the playground, washed a hundred times.", theme: "best-sellers", order: 1, isBanner: true },
+        { slug: "new-arrivals-kids", page: "KIDS", section: "GRID_SECTION", name: "New Arrivals — Kids", description: null, theme: "new-arrivals", order: 2, isBanner: false },
+        { slug: "best-sellers-kids", page: "KIDS", section: "GRID_SECTION", name: "Best Sellers — Kids", description: null, theme: "best-sellers", order: 3, isBanner: false },
+        { slug: "festive-kids", page: "KIDS", section: "GRID_SECTION", name: "Festive — Kids", description: null, theme: "festive-deals", order: 4, isBanner: false },
+        { slug: "budget-buys-kids", page: "KIDS", section: "GRID_SECTION", name: "Budget Buys — Kids", description: null, theme: "budget-buys", order: 5, isBanner: false },
+        { slug: "everyday-essentials-kids", page: "KIDS", section: "GRID_SECTION", name: "Everyday Essentials — Kids", description: null, theme: "everyday-essentials", order: 6, isBanner: false },
 
-        // Note: CollectionPlacement doesn't have a unique field besides ID, so we find existing first to avoid bloat
-        const existingPlacement = await prisma.collectionPlacement.findFirst({
-            where: {
-                page: p.page as any,
-                section: p.section as any,
-                collectionId: col.id,
+        // ---------- OFFERS ----------
+        { slug: "festive-mega-deals", page: "OFFERS", section: "GRID_SECTION", name: "Festive Mega Deals", description: "The festive drop, priced to move.", theme: "festive-deals", order: 1, isBanner: true },
+        { slug: "budget-buys-offers", page: "OFFERS", section: "GRID_SECTION", name: "Budget Buys", description: "Everything under ৳1,000.", theme: "budget-buys", order: 2, isBanner: false },
+        { slug: "limited-edition-offers", page: "OFFERS", section: "GRID_SECTION", name: "Limited Edition Drops", description: "Small runs, gone when they are gone.", theme: "limited-edition", order: 3, isBanner: false },
+        { slug: "summer-sale-offers", page: "OFFERS", section: "GRID_SECTION", name: "Summer Sale", description: "End-of-season markdowns.", theme: "summer-sale", order: 4, isBanner: false },
+    ] as const;
+
+    const PAGE_GENDERS: Record<string, string[]> = {
+        HOME: ["MEN", "WOMEN", "KIDS"],
+        OFFERS: ["MEN", "WOMEN", "KIDS"],
+        MEN: ["MEN"],
+        WOMEN: ["WOMEN"],
+        KIDS: ["KIDS"],
+    };
+
+    // Landscape for full-width banners, portrait for the collage/side layouts.
+    const SECTION_IMAGE_SIZE: Record<string, [number, number]> = {
+        HERO: [1200, 400],
+        SEE_ALL: [1200, 400],
+        FEATURED_ROW: [600, 800],
+        GRID_SECTION: [600, 800],
+        MID_BANNER: [600, 800],
+    };
+
+    const placementMap: Record<string, { placementId: string; collectionId: string }> = {};
+
+    for (const seed of placementSeeds) {
+        const [width, height] = SECTION_IMAGE_SIZE[seed.section] ?? [600, 800];
+        const imageUrl = getPlaceholderUrl(
+            width,
+            height,
+            "333333",
+            "FFFFFF",
+            seed.name.toUpperCase()
+        );
+
+        const collection = await prisma.collection.upsert({
+            where: { slug: seed.slug },
+            update: {
+                name: seed.name,
+                gender: { set: PAGE_GENDERS[seed.page] as any },
+            },
+            create: {
+                name: seed.name,
+                slug: seed.slug,
+                gender: { set: PAGE_GENDERS[seed.page] as any },
             },
         });
 
-        const width = p.section === "GRID_SECTION" ? 600 : 1200;
-        const height = p.section === "GRID_SECTION" ? 800 : 400;
-        const imageUrl = getPlaceholderUrl(width, height, "333333", "FFFFFF", p.text);
+        const existingPlacement = await prisma.collectionPlacement.findUnique({
+            where: { collectionId: collection.id },
+        });
 
-        if (!existingPlacement) {
-            await prisma.collectionPlacement.create({
-                data: {
-                    page: p.page as any,
-                    section: p.section as any,
-                    collectionId: col.id,
-                    isBanner: p.isBanner,
-                    displayOrder: p.order,
-                    imageUrl,
-                },
-            });
-        } else {
-            await prisma.collectionPlacement.update({
-                where: { id: existingPlacement.id },
-                data: {
-                    imageUrl,
-                    displayOrder: p.order,
-                    isBanner: p.isBanner,
-                },
-            });
-        }
+        const placement = existingPlacement
+            ? await prisma.collectionPlacement.update({
+                  where: { id: existingPlacement.id },
+                  data: {
+                      page: seed.page as any,
+                      section: seed.section as any,
+                      description: seed.description,
+                      imageUrl,
+                      displayOrder: seed.order,
+                      isBanner: seed.isBanner,
+                  },
+              })
+            : await prisma.collectionPlacement.create({
+                  data: {
+                      collectionId: collection.id,
+                      page: seed.page as any,
+                      section: seed.section as any,
+                      description: seed.description,
+                      imageUrl,
+                      displayOrder: seed.order,
+                      isBanner: seed.isBanner,
+                  },
+              });
+
+        placementMap[seed.slug] = { placementId: placement.id, collectionId: collection.id };
     }
 
     // ------------------------
     // PRODUCT GENERATION
     // ------------------------
     console.log("👕 Seeding Products & Variants...");
+
+    // Products are tagged with themes here, then handed to whichever placements
+    // asked for that theme — so one theme can fill several independent sections.
+    const seededProducts: { id: string; gender: string; themes: string[] }[] = [];
 
     for (let i = 1; i <= PRODUCT_COUNT; i++) {
         const category = randomFrom(categories);
@@ -393,167 +391,24 @@ async function main() {
                     },
                 },
             });
-
-            // Link to "New Arrivals"
-            await prisma.productCollection.upsert({
-                where: {
-                    productId_collectionId: {
-                        productId: product.id,
-                        collectionId: collectionMap["new-arrivals"].id,
-                    },
-                },
-                update: {},
-                create: {
-                    productId: product.id,
-                    collectionId: collectionMap["new-arrivals"].id,
-                    displayOrder: i,
-                },
-            });
-
-            // 30% chance to be a Best Seller
-            if (Math.random() < 0.3) {
-                await prisma.productCollection.upsert({
-                    where: {
-                        productId_collectionId: {
-                            productId: product.id,
-                            collectionId: collectionMap["best-sellers"].id,
-                        },
-                    },
-                    update: {},
-                    create: {
-                        productId: product.id,
-                        collectionId: collectionMap["best-sellers"].id,
-                        displayOrder: i,
-                    },
-                });
-            }
-
-            // Link to "Trending Now" (20% chance)
-            if (Math.random() < 0.2) {
-                await prisma.productCollection.upsert({
-                    where: {
-                        productId_collectionId: {
-                            productId: product.id,
-                            collectionId: collectionMap["trending-now"].id,
-                        },
-                    },
-                    update: {},
-                    create: {
-                        productId: product.id,
-                        collectionId: collectionMap["trending-now"].id,
-                        displayOrder: i,
-                    },
-                });
-            }
-
-            // Link to "Budget Buys" (Price < 1000)
-            if (basePrice < 1000) {
-                await prisma.productCollection.upsert({
-                    where: {
-                        productId_collectionId: {
-                            productId: product.id,
-                            collectionId: collectionMap["budget-buys"].id,
-                        },
-                    },
-                    update: {},
-                    create: {
-                        productId: product.id,
-                        collectionId: collectionMap["budget-buys"].id,
-                        displayOrder: i,
-                    },
-                });
-            }
-
-            // Link to "Premium Collection" (Price > 1800)
-            if (basePrice > 1800) {
-                await prisma.productCollection.upsert({
-                    where: {
-                        productId_collectionId: {
-                            productId: product.id,
-                            collectionId: collectionMap["premium-collection"].id,
-                        },
-                    },
-                    update: {},
-                    create: {
-                        productId: product.id,
-                        collectionId: collectionMap["premium-collection"].id,
-                        displayOrder: i,
-                    },
-                });
-            }
-
-            // Link to "Festive Deals" (Occasion is Festive)
-            if (product.attributes && (product.attributes as any).occasion === "Festive") {
-                await prisma.productCollection.upsert({
-                    where: {
-                        productId_collectionId: {
-                            productId: product.id,
-                            collectionId: collectionMap["festive-deals"].id,
-                        },
-                    },
-                    update: {},
-                    create: {
-                        productId: product.id,
-                        collectionId: collectionMap["festive-deals"].id,
-                        displayOrder: i,
-                    },
-                });
-            }
-
-            // Link to "Office Basics" (Occasion is Formal)
-            if (product.attributes && (product.attributes as any).occasion === "Formal") {
-                await prisma.productCollection.upsert({
-                    where: {
-                        productId_collectionId: {
-                            productId: product.id,
-                            collectionId: collectionMap["office-basics"].id,
-                        },
-                    },
-                    update: {},
-                    create: {
-                        productId: product.id,
-                        collectionId: collectionMap["office-basics"].id,
-                        displayOrder: i,
-                    },
-                });
-            }
-
-            // Link to "Everyday Essentials" (Occasion is Casual)
-            if (product.attributes && (product.attributes as any).occasion === "Casual") {
-                await prisma.productCollection.upsert({
-                    where: {
-                        productId_collectionId: {
-                            productId: product.id,
-                            collectionId: collectionMap["everyday-essentials"].id,
-                        },
-                    },
-                    update: {},
-                    create: {
-                        productId: product.id,
-                        collectionId: collectionMap["everyday-essentials"].id,
-                        displayOrder: i,
-                    },
-                });
-            }
-
-            // Link to "Limited Edition" (5% chance)
-            if (Math.random() < 0.05) {
-                await prisma.productCollection.upsert({
-                    where: {
-                        productId_collectionId: {
-                            productId: product.id,
-                            collectionId: collectionMap["limited-edition"].id,
-                        },
-                    },
-                    update: {},
-                    create: {
-                        productId: product.id,
-                        collectionId: collectionMap["limited-edition"].id,
-                        displayOrder: i,
-                    },
-                });
-            }
         }
+
+        // Theme tags drive which placements this product shows up in. Computed
+        // every run so re-seeding an existing database still fills the sections.
+        const occasion = (product.attributes as any)?.occasion;
+        const themes = ["new-arrivals"];
+        if (Math.random() < 0.3) themes.push("best-sellers");
+        if (Math.random() < 0.2) themes.push("trending-now");
+        if (Math.random() < 0.25) themes.push("summer-sale");
+        if (Math.random() < 0.15) themes.push("limited-edition");
+        if (basePrice < 1000) themes.push("budget-buys");
+        if (basePrice > 1800) themes.push("premium-collection");
+        if (occasion === "Festive") themes.push("festive-deals");
+        if (occasion === "Formal") themes.push("office-basics");
+        if (occasion === "Casual") themes.push("everyday-essentials");
+
+        seededProducts.push({ id: product.id, gender: genEnum, themes });
+
 
         // ------------------------
         // VARIANTS
@@ -621,55 +476,49 @@ async function main() {
 
     // ------------------------
     // PLACEMENT PRODUCTS
-    // Assign each CollectionPlacement its own product list filtered by page gender.
-    // e.g. "Limited Edition" on MEN page gets only MEN products; WOMEN page gets only WOMEN products.
+    // Each placement gets its own curated list: the theme it asked for,
+    // narrowed to the genders its page serves. The same list is mirrored onto
+    // the placement's collection so coupons and slug lookups agree with it.
     // ------------------------
-    console.log("🔗 Seeding CollectionPlacementProducts...");
+    console.log("🔗 Seeding placement product lists...");
 
-    const pageGenderMap: Record<string, string | null> = {
-        MEN: "MEN",
-        WOMEN: "WOMEN",
-        KIDS: "KIDS",
-        HOME: null,
-        OFFER: null,
-        OFFERS: null,
-        CATALOG: null,
-    };
+    const MAX_PRODUCTS_PER_PLACEMENT = 24;
 
-    const allPlacements = await prisma.collectionPlacement.findMany({
-        include: {
-            collection: {
-                include: {
-                    products: {
-                        include: { product: true },
-                        orderBy: { displayOrder: "asc" },
-                    },
-                },
-            },
-        },
-    });
+    for (const seed of placementSeeds) {
+        const target = placementMap[seed.slug];
+        if (!target) continue;
 
-    for (const placement of allPlacements) {
-        const pageGender = pageGenderMap[placement.page] ?? null;
+        const allowedGenders = PAGE_GENDERS[seed.page] ?? [];
+        const picked = seededProducts
+            .filter((p) => p.themes.includes(seed.theme))
+            .filter((p) => allowedGenders.includes(p.gender))
+            .slice(0, MAX_PRODUCTS_PER_PLACEMENT);
 
-        let eligibleProducts = placement.collection.products.map((pc) => pc.product);
-
-        if (pageGender) {
-            eligibleProducts = eligibleProducts.filter((p) =>
-                (p.gender as string[]).includes(pageGender)
-            );
-        }
-
-        if (eligibleProducts.length === 0) continue;
-
-        // Clear existing placement products before re-seeding (idempotent)
+        // Idempotent: rebuild both sides from scratch each run.
         await prisma.collectionPlacementProduct.deleteMany({
-            where: { placementId: placement.id },
+            where: { placementId: target.placementId },
+        });
+        await prisma.productCollection.deleteMany({
+            where: { collectionId: target.collectionId },
         });
 
+        if (picked.length === 0) {
+            console.warn(`   ⚠️  ${seed.name} (${seed.page}/${seed.section}) matched no products`);
+            continue;
+        }
+
         await prisma.collectionPlacementProduct.createMany({
-            data: eligibleProducts.map((p, idx) => ({
-                placementId: placement.id,
+            data: picked.map((p, idx) => ({
+                placementId: target.placementId,
+                productId: p.id,
+                displayOrder: idx,
+            })),
+            skipDuplicates: true,
+        });
+
+        await prisma.productCollection.createMany({
+            data: picked.map((p, idx) => ({
+                collectionId: target.collectionId,
                 productId: p.id,
                 displayOrder: idx,
             })),
@@ -677,61 +526,9 @@ async function main() {
         });
     }
 
-    // ------------------------
-    // HOMEPAGE PROMOTIONS (HomePromo)
-    // ------------------------
-    console.log("📢 Seeding Homepage Promotions...");
-    
-    // Clear existing to avoid duplicate conflicts and keep a clean slate of 4 fixed sections
-    await prisma.homePromo.deleteMany({});
-    
-    const trendingCol = await prisma.collection.findFirst({
-        where: { slug: "trending-now" },
-    });
-    const defaultCol = trendingCol || (await prisma.collection.findFirst()) || null;
-
-    const DEFAULT_PROMOS = [
-        {
-            title: "Women Fashionable Top",
-            description: "This dress embodies sustainable fashion practices, woven from eco-friendly materials and produced with ethical craftsmanship.",
-            contentType: "COLLECTION",
-            collectionId: defaultCol?.id || null,
-            imageUrl: "https://images.unsplash.com/photo-1496747611176-843222e1e57c?q=80&w=800&auto=format&fit=crop",
-            isActive: true,
-        },
-        {
-            title: "Fashionable Dress",
-            description: "This dress embodies sustainable fashion practices, woven from eco-friendly materials and produced with ethical craftsmanship.",
-            contentType: "COLLECTION",
-            collectionId: defaultCol?.id || null,
-            imageUrl: "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?q=80&w=687&auto=format&fit=crop",
-            isActive: true,
-        },
-        {
-            title: "Luxurious Gown",
-            description: "This dress embodies sustainable fashion practices, woven from eco-friendly materials and produced with ethical craftsmanship.",
-            contentType: "COLLECTION",
-            collectionId: defaultCol?.id || null,
-            imageUrl: "https://images.unsplash.com/photo-1566174053879-31528523f8ae?q=80&w=800&auto=format&fit=crop",
-            isActive: true,
-        },
-        {
-            title: "Fashionable Heals",
-            description: "This dress embodies sustainable fashion practices, woven from eco-friendly materials and produced with ethical craftsmanship.",
-            contentType: "COLLECTION",
-            collectionId: defaultCol?.id || null,
-            imageUrl: "https://images.unsplash.com/photo-1543163521-1bf539c55dd2?q=80&w=800&auto=format&fit=crop",
-            isActive: true,
-        },
-    ];
-
-    for (const promo of DEFAULT_PROMOS) {
-        await prisma.homePromo.create({
-            data: promo,
-        });
-    }
-
-    console.log(`✅ Seed completed! Processed ${PRODUCT_COUNT} products.`);
+    console.log(
+        `✅ Seed completed! ${PRODUCT_COUNT} products across ${placementSeeds.length} placements.`
+    );
 }
 
 main()

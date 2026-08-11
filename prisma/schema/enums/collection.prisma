@@ -3,15 +3,16 @@ enum PageType {
     MEN
     WOMEN
     KIDS
-    CATALOG
-    OFFER
+    OFFERS
 }
 
+/// Section decides how the placement renders on the storefront, so every
+/// placement must declare one. See SECTION_GUIDANCE_MAP in the admin dashboard
+/// for the layout each value maps to.
 enum SectionType {
-    TOP_BANNER
-    MID_BANNER
+    HERO
     FEATURED_ROW
     GRID_SECTION
+    MID_BANNER
     SEE_ALL
-    HERO
 }

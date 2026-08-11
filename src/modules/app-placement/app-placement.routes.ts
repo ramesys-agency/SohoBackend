@@ -6,12 +6,16 @@ import { authMiddleware, adminMiddleware } from "../../core/middleware/auth.midd
 export const appPlacementRoutes = Router();
 const appPlacementController = new AppPlacementController();
 
-// Admin Routes. The storefront never calls these directly — it reads placement
-// content through the collections endpoint — so the whole module is staff-only.
+// Public — the storefront builds every page from these, so reads are open.
+appPlacementRoutes.get("/", appPlacementController.getPlacements);
+appPlacementRoutes.get("/:id", appPlacementController.getPlacement);
+
+// Admin
 appPlacementRoutes.use(authMiddleware, adminMiddleware);
 
 appPlacementRoutes.post("/", upload.single("image"), appPlacementController.createPlacement);
-appPlacementRoutes.get("/:id", appPlacementController.getPlacement);
+appPlacementRoutes.post("/:id/duplicate", appPlacementController.duplicatePlacement);
+appPlacementRoutes.patch("/reorder", appPlacementController.reorderPlacements);
 appPlacementRoutes.put("/:id", upload.single("image"), appPlacementController.updatePlacement);
 appPlacementRoutes.delete("/:id", appPlacementController.deletePlacement);
 appPlacementRoutes.post("/:id/products", appPlacementController.addPlacementProducts);
