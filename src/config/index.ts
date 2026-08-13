@@ -117,7 +117,12 @@ export const config = {
     },
 
     checkout: {
-        deliveryFee: env.DELIVERY_FEE,
+        // Region-based delivery charges. The region comes from the drop address,
+        // never from the client — see modules/checkout/delivery-fee.ts.
+        deliveryFees: {
+            INSIDE_DHAKA: env.DELIVERY_FEE_INSIDE_DHAKA,
+            OUTSIDE_DHAKA: env.DELIVERY_FEE_OUTSIDE_DHAKA,
+        },
         reservationEnabled: env.CHECKOUT_RESERVATION_ENABLED,
         reservationTtlMinutes: env.CHECKOUT_RESERVATION_TTL_MINUTES,
         maxHoldMinutes: env.CHECKOUT_MAX_HOLD_MINUTES,

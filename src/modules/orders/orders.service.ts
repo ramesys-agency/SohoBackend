@@ -9,14 +9,15 @@ import { RoadRushService, type RoadRushStatusDetail } from "../logistics/roadrus
 import { mapRoadRushStatus } from "../logistics/roadrush-status.js";
 import { CouponService } from "../coupon/coupon.service.js";
 import { CheckoutService, type CheckoutLine } from "../checkout/checkout.service.js";
+import { resolveDeliveryFee } from "../checkout/delivery-fee.js";
 import { logisticsJobService } from "../logistics/logistics-job.service.js";
 import { logisticsJobWorker } from "../logistics/logistics-job.worker.js";
 import { NotificationService } from "../notification/notification.service.js";
-import { config } from "../../config/index.js";
 import { logger } from "../../config/logger.js";
 import { OrderStatus, OrderType, PaymentStatus, StatusSource, type Prisma } from "@prisma/client";
 import { prisma } from "../../config/prisma.js";
 import { resolveOrderStatus, type StatusOutcome } from "./order-status.resolver.js";
+import { COD, type CreateOrderInput } from "./orders.schema.js";
 
 /**
  * Manual shipping is an internal fulfilment route — staff arrange the delivery
@@ -230,7 +231,13 @@ export class OrderService {
         return order;
     }
 
-    async createOrder(userId: string, data: any) {
+    /**
+     * Places an order. `data` has already been through `createOrderSchema`, so
+     * the quantity is a sane whole number and the payment method is one this
+     * deployment can actually collect on — see orders.schema.ts for why that
+     * second one matters.
+     */
+    async createOrder(userId: string, data: CreateOrderInput) {
         // 1. Get order items — either from buyNow payload or the user's cart
         let cartItems: any[];
 
@@ -307,10 +314,12 @@ export class OrderService {
         }
 
         // The delivery charge is the server's number, not the client's — the app
-        // only displays what GET /checkout/config told it. Everything downstream
-        // (the payment row, and the COD amount the courier collects) uses this
-        // total, so what the customer agreed to is what gets collected.
-        const shippingFee = config.checkout.deliveryFee;
+        // only displays what GET /checkout/config told it. It is decided by the
+        // drop address's region (Dhaka district vs the rest of the country), and
+        // everything downstream (the payment row, and the COD amount the courier
+        // collects) uses this total, so what the customer agreed to is what gets
+        // collected.
+        const { fee: shippingFee } = resolveDeliveryFee(address);
         const totalAmount = Math.max(0, subtotal + shippingFee - discountAmount);
         const customerFullName = address.user.fullName || data.customerFullName || "Not Provided";
         const customerPhone = address.user.phone || data.customerPhone;
@@ -326,8 +335,27 @@ export class OrderService {
             quantity: item.quantity,
         }));
 
+        // The payload is validated at the edge, but the cart path sources its
+        // quantities from rows written elsewhere. A non-positive one reaching
+        // `decrementStock` would run the decrement backwards and *add* stock, so
+        // it stops here rather than being trusted because of where it came from.
+        const badLine = orderLines.find(
+            (line) => !Number.isInteger(line.quantity) || line.quantity < 1
+        );
+        if (badLine) {
+            throw new BadRequestError("Every item must have a whole quantity of at least 1");
+        }
+
         // 4. Create Order & Payment in a transaction
         const order = await this.prisma.getClient().$transaction(async (tx) => {
+            // Spend the coupon first. The limits are enforced there, under a
+            // lock, and the per-user count has to be taken before this order
+            // exists or it would count itself. A coupon exhausted since the
+            // discount was quoted throws here and takes the order down with it.
+            if (couponId) {
+                await this.couponService.claimUsage(tx, couponId, userId);
+            }
+
             // Create Order record
             const newOrder = await tx.order.create({
                 data: {
@@ -337,8 +365,8 @@ export class OrderService {
                     couponId,
                     discountAmount,
                     shippingFee,
-                    aggregator: data.aggregator,
-                    cod: data.paymentMethod === "COD",
+                    ...(data.aggregator && { aggregator: data.aggregator }),
+                    cod: data.paymentMethod === COD,
                     itemValue: totalAmount,
                     itemDetails,
                     receiverDivision: address.division,
@@ -375,11 +403,6 @@ export class OrderService {
 
             await this.decrementStock(tx, orderLines, newOrder.id, data.checkoutId);
 
-            // If coupon used, increment usage
-            if (couponId) {
-                await this.couponService.incrementUsage(tx, couponId);
-            }
-
             // Create Initial Payment Record
             await tx.payment.create({
                 data: {
@@ -388,7 +411,7 @@ export class OrderService {
                     currency: "BDT",
                     provider: data.paymentMethod,
                     providerPaymentId: `COD-${newOrder.id}-${Date.now()}`,
-                    status: data.paymentMethod === "COD" ? "cod_pending" : "pending",
+                    status: data.paymentMethod === COD ? "cod_pending" : "pending",
                 },
             });
 
@@ -404,7 +427,7 @@ export class OrderService {
                 customer_full_name: customerFullName,
                 customer_mobile_number: customerPhone,
                 item_value: totalAmount,
-                cod: data.paymentMethod === "COD",
+                cod: data.paymentMethod === COD,
                 item_details: itemDetails,
             });
 
@@ -711,6 +734,9 @@ export class OrderService {
         const order = await this.prisma.getClient().order.findUnique({ where: { id: orderId } });
         if (!order) throw new NotFoundError("Order not found");
         if (order.orderCode) throw new BadRequestError("Order is already synced with RoadRush");
+        if (order.status === OrderStatus.cancelled) {
+            throw new BadRequestError("A cancelled order cannot be sent to the courier");
+        }
 
         await this.logisticsJobs.requeue(orderId);
         const result = await logisticsJobWorker.runOnce();
@@ -900,6 +926,12 @@ export class OrderService {
             // it stays an explicit inventory decision.
             if (outcome.status === OrderStatus.cancelled) {
                 await this.moveStock(tx, orderId, existing.items, 1, "order_cancelled");
+
+                // ...and takes the courier hand-off off the queue. Written in this
+                // transaction so there is no tick between the cancellation and the
+                // job dying in which a worker could still dispatch the parcel and
+                // have a rider collect cash for it.
+                await this.logisticsJobs.cancelForOrder(orderId, tx);
             }
 
             // ...and taking an order back out of cancelled has to take those units
@@ -989,7 +1021,7 @@ export class OrderService {
         });
     }
 
-    async adminUpdatePaymentStatus(orderId: string, status: string) {
+    async adminUpdatePaymentStatus(orderId: string, status: string, actorId?: string) {
         const order = await this.prisma.getClient().order.findUnique({
             where: { id: orderId },
             select: { status: true, userId: true, orderCode: true },
@@ -1031,24 +1063,53 @@ export class OrderService {
             );
         }
 
-        const updated = await this.prisma.getClient().payment.update({
-            where: { id: payment.id },
-            data: {
-                status: finalStatus as PaymentStatus,
-            },
+        const isNewRefund =
+            finalStatus === PaymentStatus.refunded && payment.status !== PaymentStatus.refunded;
+
+        const { updated, refunded } = await this.prisma.getClient().$transaction(async (tx) => {
+            const result = await tx.payment.update({
+                where: { id: payment.id },
+                data: {
+                    status: finalStatus as PaymentStatus,
+                },
+            });
+
+            if (!isNewRefund) return { updated: result, refunded: null };
+
+            // Refunding by hand is money moving just as much as refunding a
+            // return is, so it goes in the same ledger. Without this the returns
+            // path would cap against a total that ignored everything settled
+            // here, and an order could be paid back twice over.
+            const { _sum } = await tx.refund.aggregate({
+                where: { orderId },
+                _sum: { amount: true },
+            });
+            const outstanding = payment.amount.minus(_sum.amount ?? 0);
+
+            if (outstanding.lte(0)) return { updated: result, refunded: null };
+
+            await tx.refund.create({
+                data: {
+                    orderId,
+                    amount: outstanding,
+                    currency: payment.currency,
+                    ...(actorId && { issuedBy: actorId }),
+                    note: "Marked refunded from the dashboard",
+                },
+            });
+
+            return { updated: result, refunded: outstanding };
         });
 
-        // A refund is the customer's money moving — they hear about it. Guarded on
-        // an actual change so re-saving the same status doesn't notify twice.
-        if (
-            updated.status === PaymentStatus.refunded &&
-            payment.status !== PaymentStatus.refunded
-        ) {
+        // A refund is the customer's money moving — they hear about it. Told the
+        // amount this action actually sent back, not the order total, which may
+        // already have been partly refunded through a return.
+        if (refunded) {
             await this.notificationService.notifyOrderRefunded({
                 userId: order.userId,
                 orderId,
                 orderCode: order.orderCode,
-                amount: updated.amount.toString(),
+                amount: refunded.toString(),
             });
         }
 
@@ -1066,6 +1127,9 @@ export class OrderService {
 
         if (!order) throw new NotFoundError("Order not found");
         if (order.orderCode) throw new BadRequestError("Order is already synced with RoadRush");
+        if (order.status === OrderStatus.cancelled) {
+            throw new BadRequestError("A cancelled order cannot be sent to the courier");
+        }
 
         const customerFullName = order.address.user.fullName || "Not Provided";
         const customerPhone =

@@ -2,7 +2,7 @@ import { PrismaService } from "../../core/services/index.js";
 import { BadRequestError, ForbiddenError, NotFoundError } from "../../core/errors/http-errors.js";
 import { NotificationService } from "../notification/notification.service.js";
 import { logger } from "../../config/logger.js";
-import { Prisma, ReturnStatus } from "@prisma/client";
+import { PaymentStatus, Prisma, ReturnStatus } from "@prisma/client";
 import { prisma } from "../../config/prisma.js";
 import type { AdminCreateReturnDto, AdminUpdateReturnDto, ReturnFilterParams } from "./returns.types.js";
 
@@ -15,6 +15,22 @@ import type { AdminCreateReturnDto, AdminUpdateReturnDto, ReturnFilterParams } f
 
 /** Returns in these states no longer hold a unit of stock "in flight". */
 const CLOSED_STATUSES: ReturnStatus[] = [ReturnStatus.rejected];
+
+/**
+ * Payment states that mean the customer's money actually reached us. Only these
+ * can be refunded — stamping "refunded" on an order nobody ever collected for
+ * records a payment going back out that never came in.
+ */
+const COLLECTED_PAYMENT_STATUSES: PaymentStatus[] = [
+    PaymentStatus.success,
+    PaymentStatus.cod_collected,
+];
+
+/** Money is rounded to paisa at the point it is written, never before. */
+const CURRENCY_DP = 2;
+
+const round = (value: Prisma.Decimal): Prisma.Decimal =>
+    value.toDecimalPlaces(CURRENCY_DP, Prisma.Decimal.ROUND_HALF_UP);
 
 /** Allowed status moves. A rejected or refunded return is final. */
 const TRANSITIONS: Record<ReturnStatus, ReturnStatus[]> = {
@@ -244,11 +260,11 @@ export class ReturnService {
     /**
      * Moves a return through requested -> approved -> refunded (or rejected).
      *
-     * On `refunded` the order's payment is only marked refunded once the refunded
-     * total covers the whole order — a partial return leaves the payment alone so
-     * the record still reflects that money was collected.
+     * Reaching `refunded` is the only place this service moves money, so the
+     * amount is settled by `issueRefund` — see there for what a return is worth
+     * and what stops an order being refunded past what was paid for it.
      */
-    async adminUpdateReturnStatus(returnId: string, dto: AdminUpdateReturnDto) {
+    async adminUpdateReturnStatus(returnId: string, dto: AdminUpdateReturnDto, actorId?: string) {
         const existing = await this.prisma.getClient().return.findUnique({
             where: { id: returnId },
             include: RETURN_INCLUDE,
@@ -279,40 +295,36 @@ export class ReturnService {
             data.note = note;
         }
 
-        let refundAmount: Prisma.Decimal | null = null;
-        if (next === ReturnStatus.refunded) {
-            refundAmount = this.resolveRefundAmount(dto.refundAmount, existing.quantity, existing.orderItem.priceAtBuy);
-            data.refundAmount = refundAmount;
-        }
-
         const order = existing.orderItem.order;
 
-        const updated = await this.prisma.getClient().$transaction(async (tx) => {
-            const result = await tx.return.update({
-                where: { id: returnId },
-                data,
-                include: RETURN_INCLUDE,
-            });
+        const { updated, refundAmount } = await this.prisma.getClient().$transaction(async (tx) => {
+            let issued: Prisma.Decimal | null = null;
 
+            // Settled before the return is written so a refund that would take
+            // the order past what the customer paid takes the status change down
+            // with it, rather than leaving a `refunded` return with no money
+            // behind it.
             if (next === ReturnStatus.refunded) {
-                const refundedTotal = await this.sumRefunded(tx, order.id);
-
-                if (refundedTotal.gte(order.totalAmount)) {
-                    const payment = await tx.payment.findFirst({
-                        where: { orderId: order.id },
-                        orderBy: { createdAt: "desc" },
-                    });
-
-                    if (payment && payment.status !== "refunded") {
-                        await tx.payment.update({
-                            where: { id: payment.id },
-                            data: { status: "refunded" },
-                        });
-                    }
-                }
+                issued = await this.issueRefund(tx, {
+                    returnId,
+                    orderId: order.id,
+                    quantity: existing.quantity,
+                    priceAtBuy: existing.orderItem.priceAtBuy,
+                    provided: dto.refundAmount,
+                    ...(actorId ? { issuedBy: actorId } : {}),
+                    ...(note ? { note } : {}),
+                });
+                data.refundAmount = issued;
             }
 
-            return result;
+            return {
+                updated: await tx.return.update({
+                    where: { id: returnId },
+                    data,
+                    include: RETURN_INCLUDE,
+                }),
+                refundAmount: issued,
+            };
         });
 
         await this.notify(order.userId, {
@@ -352,43 +364,178 @@ export class ReturnService {
         return { id: returnId };
     }
 
-    private resolveRefundAmount(
-        provided: number | string | undefined,
-        quantity: number,
-        priceAtBuy: Prisma.Decimal
-    ): Prisma.Decimal {
-        if (provided === undefined || provided === null || provided === "") {
-            return new Prisma.Decimal(priceAtBuy).mul(quantity);
+    /**
+     * Pays a return back, writes it to the ledger, and settles the payment when
+     * the goods have all been refunded.
+     *
+     * Two things decide the amount, and both used to be missing:
+     *
+     * The default is what the customer actually paid for those units, not their
+     * list price. An order-level discount is spread across the lines in
+     * proportion to their value, so a ৳500-off order no longer refunds every
+     * line at full price and hands back more than came in.
+     *
+     * The cap is what is left refundable on the order — its total less
+     * everything already paid back. An admin can still type a different figure
+     * (to include the delivery charge, say, or to refund a goodwill amount), but
+     * not one that takes the order past what was collected for it.
+     *
+     * The delivery fee is not refunded by default: the parcel was delivered, so
+     * the customer is refunded for goods and keeps paying for the trip. Adding
+     * it stays a deliberate, typed-in decision.
+     */
+    private async issueRefund(
+        tx: Prisma.TransactionClient,
+        params: {
+            returnId: string;
+            orderId: string;
+            quantity: number;
+            priceAtBuy: Prisma.Decimal;
+            provided?: number | string | undefined;
+            issuedBy?: string;
+            note?: string;
+        }
+    ): Promise<Prisma.Decimal> {
+        const order = await tx.order.findUnique({
+            where: { id: params.orderId },
+            select: {
+                totalAmount: true,
+                shippingFee: true,
+                discountAmount: true,
+                items: { select: { priceAtBuy: true, quantity: true } },
+            },
+        });
+
+        if (!order) throw new NotFoundError("Order not found");
+
+        const amount = this.resolveRefundAmount(order, params);
+
+        const alreadyRefunded = await this.sumRefunded(tx, params.orderId);
+        const refundable = new Prisma.Decimal(order.totalAmount).minus(alreadyRefunded);
+
+        if (refundable.lte(0)) {
+            throw new BadRequestError("This order has already been refunded in full");
         }
 
-        let amount: Prisma.Decimal;
-        try {
-            amount = new Prisma.Decimal(provided);
-        } catch {
-            throw new BadRequestError("Refund amount must be a number");
+        if (amount.gt(refundable)) {
+            throw new BadRequestError(
+                `Only ৳${refundable.toFixed(CURRENCY_DP)} is still refundable on this order — ` +
+                    `৳${alreadyRefunded.toFixed(CURRENCY_DP)} of ৳${new Prisma.Decimal(order.totalAmount).toFixed(CURRENCY_DP)} has already been paid back`
+            );
         }
 
-        if (amount.isNegative()) {
-            throw new BadRequestError("Refund amount cannot be negative");
-        }
+        // The unique constraint on returnId is what makes a double refund
+        // impossible, rather than a check that two requests could both pass.
+        await tx.refund.create({
+            data: {
+                orderId: params.orderId,
+                returnId: params.returnId,
+                amount,
+                ...(params.issuedBy && { issuedBy: params.issuedBy }),
+                ...(params.note && { note: params.note }),
+            },
+        });
+
+        await this.settlePaymentIfFullyRefunded(tx, {
+            orderId: params.orderId,
+            refundedTotal: alreadyRefunded.add(amount),
+            // What the goods themselves were charged at. Comparing against the
+            // order total instead would mean a fully returned order never looked
+            // fully refunded, because the delivery fee is in the total but not in
+            // any line refund.
+            goodsValue: new Prisma.Decimal(order.totalAmount).minus(order.shippingFee),
+        });
 
         return amount;
     }
 
-    /** Total already refunded across every return on an order. */
-    private async sumRefunded(tx: Prisma.TransactionClient, orderId: string): Promise<Prisma.Decimal> {
-        const refunded = await tx.return.findMany({
-            where: {
-                status: ReturnStatus.refunded,
-                orderItem: { orderId },
-            },
-            select: { refundAmount: true },
-        });
+    /** What this return is worth, before the order-level cap is applied. */
+    private resolveRefundAmount(
+        order: {
+            discountAmount: Prisma.Decimal;
+            items: Array<{ priceAtBuy: Prisma.Decimal; quantity: number }>;
+        },
+        params: { quantity: number; priceAtBuy: Prisma.Decimal; provided?: number | string | undefined }
+    ): Prisma.Decimal {
+        const { provided } = params;
 
-        return refunded.reduce(
-            (sum, r) => (r.refundAmount ? sum.add(r.refundAmount) : sum),
+        if (provided !== undefined && provided !== null && provided !== "") {
+            let amount: Prisma.Decimal;
+            try {
+                amount = new Prisma.Decimal(provided);
+            } catch {
+                throw new BadRequestError("Refund amount must be a number");
+            }
+
+            if (!amount.isFinite() || amount.isNegative()) {
+                throw new BadRequestError("Refund amount must be a positive number");
+            }
+
+            return round(amount);
+        }
+
+        const lineValue = new Prisma.Decimal(params.priceAtBuy).mul(params.quantity);
+        const subtotal = order.items.reduce(
+            (sum, item) => sum.add(new Prisma.Decimal(item.priceAtBuy).mul(item.quantity)),
             new Prisma.Decimal(0)
         );
+
+        // No discount to spread (or nothing to spread it over) — the line is
+        // worth what it was billed at.
+        if (subtotal.lte(0) || order.discountAmount.lte(0)) {
+            return round(lineValue);
+        }
+
+        // This line's share of the discount, in proportion to its value.
+        const share = new Prisma.Decimal(order.discountAmount).mul(lineValue).div(subtotal);
+
+        return round(lineValue.minus(share));
+    }
+
+    /**
+     * Mark the payment refunded once every taka of goods is back with the
+     * customer. Only a payment that was actually collected can be refunded —
+     * an order the rider never collected on has nothing to send back, and
+     * stamping it "refunded" would invent a payment that never happened.
+     */
+    private async settlePaymentIfFullyRefunded(
+        tx: Prisma.TransactionClient,
+        params: { orderId: string; refundedTotal: Prisma.Decimal; goodsValue: Prisma.Decimal }
+    ): Promise<void> {
+        if (params.refundedTotal.lt(params.goodsValue)) return;
+
+        const payment = await tx.payment.findFirst({
+            where: { orderId: params.orderId },
+            orderBy: { createdAt: "desc" },
+        });
+
+        if (!payment || payment.status === PaymentStatus.refunded) return;
+
+        if (!COLLECTED_PAYMENT_STATUSES.includes(payment.status)) {
+            logger.warn("Order fully refunded but its payment was never collected", {
+                orderId: params.orderId,
+                paymentStatus: payment.status,
+            });
+            return;
+        }
+
+        await tx.payment.update({
+            where: { id: payment.id },
+            data: { status: PaymentStatus.refunded },
+        });
+    }
+
+    /** Total already paid back on an order, straight from the ledger. */
+    private async sumRefunded(
+        tx: Prisma.TransactionClient,
+        orderId: string
+    ): Promise<Prisma.Decimal> {
+        const { _sum } = await tx.refund.aggregate({
+            where: { orderId },
+            _sum: { amount: true },
+        });
+
+        return new Prisma.Decimal(_sum.amount ?? 0);
     }
 
     private async notify(

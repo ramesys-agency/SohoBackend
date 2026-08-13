@@ -1,7 +1,23 @@
+import type { Prisma } from "@prisma/client";
 import { PrismaService } from "../../core/services/index.js";
 import { NotFoundError, BadRequestError } from "../../core/errors/http-errors.js";
 import { prisma } from "../../config/prisma.js";
 
+/**
+ * The parts of a coupon that decide whether it may be used at all, independent
+ * of what is in the basket. Structural so both the preview (which works with a
+ * coupon loaded with its orders) and the claim (which works with the row) can
+ * be checked by the same code.
+ */
+interface UsableCoupon {
+    isActive: boolean;
+    isDeleted: boolean;
+    validFrom: Date;
+    validTo: Date | null;
+    usageLimit: number | null;
+    usageCount: number;
+    userUsageLimit: number | null;
+}
 
 export class CouponService {
     private prisma: PrismaService = prisma;
@@ -141,33 +157,17 @@ export class CouponService {
     }
 
     async applyCouponLogic(coupon: any, userId: string, cartItems: any[]) {
-        if (!coupon.isActive) {
-            throw new BadRequestError("Coupon is inactive");
-        }
-
-        const now = new Date();
-        if (now < coupon.validFrom) {
-            throw new BadRequestError("Coupon is not yet valid");
-        }
-        if (coupon.validTo && now > coupon.validTo) {
-            throw new BadRequestError("Coupon has expired");
-        }
-
-        if (coupon.usageLimit && coupon.usageCount >= coupon.usageLimit) {
-            throw new BadRequestError("Coupon usage limit reached");
-        }
-
-        // Check user usage limit
         // coupon.orders was included in validateCoupon, but for internal use we might need to fetch it if not provided
-        const userOrdersCount = coupon.orders 
-            ? coupon.orders.length 
+        const userOrdersCount = coupon.orders
+            ? coupon.orders.length
             : await this.prisma.getClient().order.count({
                 where: { couponId: coupon.id, userId }
             });
 
-        if (coupon.userUsageLimit && userOrdersCount >= coupon.userUsageLimit) {
-            throw new BadRequestError("You have already used this coupon maximum number of times");
-        }
+        // Only a preview: the same rules are re-checked under a lock in
+        // `claimUsage` when the order is actually written, because a coupon can
+        // run out between quoting a discount and charging for it.
+        this.assertUsable(coupon, userOrdersCount);
 
         // Calculate order total for applicable items
         let totalAmount = 0;
@@ -216,9 +216,13 @@ export class CouponService {
             discount = Number(coupon.maxDiscount);
         }
 
-        // Ensure discount doesn't exceed total amount
-        if (discount > totalAmount) {
-            discount = totalAmount;
+        // A coupon can only take money off what it applies to. A percentage is
+        // already bounded that way; a fixed amount is not — a ৳500 code scoped
+        // to one collection used to come off the whole basket even when only
+        // ৳200 of it was eligible. This also keeps the discount under the cart
+        // total, since the applicable items are a subset of it.
+        if (discount > applicableAmount) {
+            discount = applicableAmount;
         }
 
         return {
@@ -229,7 +233,35 @@ export class CouponService {
         };
     }
 
-    async incrementUsage(tx: any, couponId: string) {
+    /**
+     * Spend one use of a coupon on behalf of an order being written.
+     *
+     * This is where the usage limits are actually enforced. `applyCouponLogic`
+     * only quotes a discount — it reads `usageCount` and returns, so two orders
+     * placed in the same moment both saw a coupon with uses left and a
+     * single-use code got spent twice. Checking and incrementing has to be one
+     * indivisible step, which is what the row lock below buys.
+     *
+     * Call it *before* the order row is created, so the per-user count is of the
+     * customer's earlier orders and not of the one being placed. Throwing rolls
+     * the order back, which is the point: a coupon that ran out between the quote
+     * and the sale must not be charged as though it hadn't.
+     */
+    async claimUsage(tx: Prisma.TransactionClient, couponId: string, userId: string) {
+        // Held until this transaction commits, so every other claim of the same
+        // coupon queues behind it. Coupon rows are contended only at the moment
+        // of purchase, and only per code, so the wait is short.
+        await tx.$queryRaw`SELECT id FROM "Coupon" WHERE id = ${couponId} FOR UPDATE`;
+
+        const coupon = await tx.coupon.findUnique({ where: { id: couponId } });
+        if (!coupon || coupon.isDeleted) {
+            throw new BadRequestError("Invalid coupon code");
+        }
+
+        const userOrdersCount = await tx.order.count({ where: { couponId, userId } });
+
+        this.assertUsable(coupon, userOrdersCount);
+
         return await tx.coupon.update({
             where: { id: couponId },
             data: {
@@ -238,6 +270,33 @@ export class CouponService {
                 },
             },
         });
+    }
+
+    /**
+     * Whether a coupon may be used at all — live, in date, and not spent. Shared
+     * by the quote and the claim so the two can never disagree about the rules,
+     * only about when they were checked.
+     */
+    private assertUsable(coupon: UsableCoupon, userOrdersCount: number): void {
+        if (!coupon.isActive) {
+            throw new BadRequestError("Coupon is inactive");
+        }
+
+        const now = new Date();
+        if (now < coupon.validFrom) {
+            throw new BadRequestError("Coupon is not yet valid");
+        }
+        if (coupon.validTo && now > coupon.validTo) {
+            throw new BadRequestError("Coupon has expired");
+        }
+
+        if (coupon.usageLimit !== null && coupon.usageCount >= coupon.usageLimit) {
+            throw new BadRequestError("Coupon usage limit reached");
+        }
+
+        if (coupon.userUsageLimit !== null && userOrdersCount >= coupon.userUsageLimit) {
+            throw new BadRequestError("You have already used this coupon maximum number of times");
+        }
     }
 }
 

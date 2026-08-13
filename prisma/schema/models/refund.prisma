@@ -1,0 +1,34 @@
+/// Money actually sent back to a customer.
+///
+/// One row per refund, written in the same transaction as the return it
+/// settles. Before this, a refund existed only as `Return.refundAmount`, so
+/// "how much have we paid back on this order" meant walking every return, and
+/// nothing stopped the total exceeding what the customer paid in the first
+/// place. This is the ledger those caps are checked against.
+///
+/// Deliberately its own table rather than a negative `Payment` row: several
+/// paths take "the payment" to be the newest row for an order, and a refund
+/// landing there would be mistaken for the charge.
+model Refund {
+    id      String @id @default(uuid())
+    orderId String
+
+    /// The return this settles. Unique — a return is refunded exactly once, and
+    /// the constraint is what enforces it rather than a check that could race.
+    /// Null leaves room for a refund that isn't tied to returned goods.
+    returnId String? @unique
+
+    amount   Decimal
+    currency String  @default("BDT")
+
+    /// Admin user id that issued it. Money moving is always someone's decision.
+    issuedBy String?
+    note     String?
+
+    order  Order   @relation(fields: [orderId], references: [id])
+    return Return? @relation(fields: [returnId], references: [id])
+
+    createdAt DateTime @default(now())
+
+    @@index([orderId])
+}

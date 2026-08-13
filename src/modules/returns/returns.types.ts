@@ -24,7 +24,11 @@ export interface AdminUpdateReturnDto {
     status: ReturnStatus;
     note?: string;
     /**
-     * Only read when moving to `refunded`. Defaults to quantity x priceAtBuy.
+     * Only read when moving to `refunded`.
+     *
+     * Defaults to what the customer actually paid for these units — quantity x
+     * priceAtBuy, less this line's share of any order-level discount. Whatever
+     * is passed, an order can never be refunded past its total.
      */
     refundAmount?: number | string;
 }

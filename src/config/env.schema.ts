@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const envSchema = z.object({
+export const envSchema = z.object({
     // Server
     NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
     PORT: z
@@ -99,10 +99,13 @@ const envSchema = z.object({
     ORDER_STATUS_POLL_INTERVAL_MINUTES: z.coerce.number().int().positive().default(15),
     ORDER_STATUS_POLL_BATCH_SIZE: z.coerce.number().int().positive().default(50),
 
-    // Flat delivery charge in BDT, added to every order server-side. The app
-    // reads it from GET /checkout/config so the price the customer agrees to and
-    // the amount the courier collects can never drift apart.
-    DELIVERY_FEE: z.coerce.number().nonnegative().default(150),
+    // Delivery charge in BDT, added to every order server-side and decided by
+    // the drop address's region: Dhaka district is the cheaper inside-Dhaka
+    // rate, everywhere else pays the outside-Dhaka rate. The app reads both from
+    // GET /checkout/config so the price the customer agrees to and the amount
+    // the courier collects can never drift apart.
+    DELIVERY_FEE_INSIDE_DHAKA: z.coerce.number().nonnegative().default(80),
+    DELIVERY_FEE_OUTSIDE_DHAKA: z.coerce.number().nonnegative().default(150),
 
     // Checkout stock reservation. Disabling only turns off the 5-minute hold —
     // orders still decrement stock atomically and still refuse to oversell.

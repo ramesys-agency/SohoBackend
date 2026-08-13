@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import { BadRequestError } from "../../core/errors/http-errors.js";
 import { OrderService } from "./orders.service.js";
+import { createOrderSchema } from "./orders.schema.js";
 import { orderStatusPoller } from "./orders.poller.js";
 import { logisticsJobWorker } from "../logistics/logistics-job.worker.js";
 import { reservationSweeper } from "../checkout/reservation.sweeper.js";
@@ -43,9 +44,18 @@ export class OrderController {
     createOrder = async (req: Request, res: Response, next: NextFunction) => {
         try {
             const userId = (req as any).user.id;
-            const data = req.body;
 
-            const order = await this.orderService.createOrder(userId, data);
+            // Validated here rather than trusted downstream: this body decides
+            // what is charged, what leaves the shelf and whether the courier
+            // collects anything at all.
+            const parsed = createOrderSchema.safeParse(req.body ?? {});
+            if (!parsed.success) {
+                throw new BadRequestError(
+                    parsed.error.issues[0]?.message ?? "Invalid order payload"
+                );
+            }
+
+            const order = await this.orderService.createOrder(userId, parsed.data);
             res.status(201).json({
                 message: "Order placed successfully",
                 data: order,
@@ -178,7 +188,11 @@ export class OrderController {
                 throw new BadRequestError("Order ID is required");
             }
 
-            const payment = await this.orderService.adminUpdatePaymentStatus(orderId, status);
+            const payment = await this.orderService.adminUpdatePaymentStatus(
+                orderId,
+                status,
+                (req as any).user?.id
+            );
 
             res.status(200).json({
                 message: "Payment status updated successfully",

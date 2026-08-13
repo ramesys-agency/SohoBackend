@@ -457,6 +457,7 @@ async function productIdFor(variant: string): Promise<string> {
 /** Wipe what these tests touch, in FK-safe order. */
 async function resetOrders(): Promise<void> {
     const client = db();
+    await client.refund.deleteMany({});
     await client.return.deleteMany({});
     await client.inventoryLog.deleteMany({});
     await client.stockReservation.deleteMany({});

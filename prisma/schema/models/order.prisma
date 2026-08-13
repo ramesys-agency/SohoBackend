@@ -40,6 +40,7 @@ model Order {
 
     items        OrderItem[]
     payments     Payment[]
+    refunds      Refund[]
     statusLogs   OrderStatusLog[]
     reservations StockReservation[]
     logisticsJob LogisticsJob?
@@ -168,11 +169,13 @@ model Return {
     // Surfaced to the customer in the app alongside the return.
     note String?
 
-    // Set when the return is refunded. Kept on the return (not just the payment)
-    // so partial refunds across several returns on one order stay attributable.
+    // Set when the return is refunded. Mirrors the Refund row written at the
+    // same moment — kept here because the app and the dashboard read the return,
+    // not the ledger.
     refundAmount Decimal?
 
     orderItem OrderItem @relation(fields: [orderItemId], references: [id])
+    refund    Refund?
     createdAt DateTime  @default(now())
     // Defaulted as well as @updatedAt so `db push` can backfill any existing row.
     updatedAt DateTime  @default(now()) @updatedAt

@@ -1,8 +1,15 @@
 import type { Request, Response, NextFunction } from "express";
 import { config } from "../../config/index.js";
-import { BadRequestError } from "../../core/errors/http-errors.js";
+import { prisma } from "../../config/prisma.js";
+import { BadRequestError, NotFoundError } from "../../core/errors/http-errors.js";
 import { CheckoutService } from "./checkout.service.js";
 import { reserveCheckoutSchema } from "./checkout.schema.js";
+import {
+    DELIVERY_REGION_LABELS,
+    getDeliveryFee,
+    resolveDeliveryFee,
+    type DeliveryRegion,
+} from "./delivery-fee.js";
 
 export class CheckoutController {
     private service = new CheckoutService();
@@ -11,15 +18,66 @@ export class CheckoutController {
      * Checkout pricing the client needs before an order exists. The delivery fee
      * is applied server-side on every order; this is only so the app can show
      * the same breakdown the server will charge.
+     *
+     * Both regional rates are returned because the app has to quote a fee on the
+     * product page, before any address is chosen. `deliveryFee` stays as the
+     * single-number default for older builds, and is the higher of the two so an
+     * app that ignores the region never quotes under what it will charge.
      */
     getConfig = (_req: Request, res: Response, next: NextFunction) => {
         try {
             res.status(200).json({
                 message: "Checkout config fetched",
                 data: {
-                    deliveryFee: config.checkout.deliveryFee,
+                    deliveryFee: Math.max(
+                        config.checkout.deliveryFees.INSIDE_DHAKA,
+                        config.checkout.deliveryFees.OUTSIDE_DHAKA
+                    ),
+                    deliveryFees: config.checkout.deliveryFees,
+                    deliveryRegions: (
+                        Object.keys(DELIVERY_REGION_LABELS) as DeliveryRegion[]
+                    ).map((region) => ({
+                        region,
+                        label: DELIVERY_REGION_LABELS[region],
+                        fee: getDeliveryFee(region),
+                    })),
                     currency: "BDT",
                 },
+            });
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    /**
+     * The fee for one saved address, resolved by the same code order creation
+     * uses. The app calls this once the customer has picked where the parcel is
+     * going, so the total on the payment screen is the total that gets charged
+     * instead of a region the client guessed at.
+     */
+    getAddressDeliveryFee = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const userId = (req as any).user.id;
+            const addressId = req.query.addressId;
+
+            if (typeof addressId !== "string" || addressId.trim() === "") {
+                throw new BadRequestError("addressId is required");
+            }
+
+            // Scoped to the caller: an unscoped lookup would let anyone who
+            // guesses an address id probe whose district it sits in.
+            const address = await prisma.getClient().address.findFirst({
+                where: { id: addressId, userId, isDeleted: false },
+                select: { district: true, city: true },
+            });
+            if (!address) {
+                throw new NotFoundError("Drop address not found");
+            }
+
+            const resolved = resolveDeliveryFee(address);
+            res.status(200).json({
+                message: "Delivery fee fetched",
+                data: { ...resolved, currency: "BDT" },
             });
         } catch (error) {
             next(error);

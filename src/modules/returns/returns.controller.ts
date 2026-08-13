@@ -85,7 +85,11 @@ export class ReturnController {
                 throw new BadRequestError("Status is required");
             }
 
-            const updated = await this.returnService.adminUpdateReturnStatus(returnId, req.body);
+            const updated = await this.returnService.adminUpdateReturnStatus(
+                returnId,
+                req.body,
+                (req as any).user?.id
+            );
             res.status(200).json({
                 message: "Return updated successfully",
                 data: updated,

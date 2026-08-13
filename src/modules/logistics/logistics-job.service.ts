@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
     LogisticsJobStatus,
     LogisticsJobType,
+    OrderStatus,
     OrderType,
     Prisma,
     type LogisticsJob,
@@ -98,9 +99,18 @@ export class LogisticsJobService {
         });
     }
 
-    /** An admin synced the order by hand — the queued attempt is now pointless. */
-    async cancelForOrder(orderId: string): Promise<void> {
-        await this.prisma.getClient().logisticsJob.updateMany({
+    /**
+     * Drop a queued attempt that should no longer happen — an admin synced the
+     * order by hand, or the order was cancelled.
+     *
+     * Pass the transaction when cancelling an order, so the job dies in the same
+     * commit as the cancellation and a worker tick in between can't hand a
+     * cancelled order to the courier.
+     */
+    async cancelForOrder(orderId: string, tx?: Prisma.TransactionClient): Promise<void> {
+        const client = tx ?? this.prisma.getClient();
+
+        await client.logisticsJob.updateMany({
             where: {
                 orderId,
                 status: { in: [LogisticsJobStatus.pending, LogisticsJobStatus.processing] },
@@ -183,6 +193,25 @@ export class LogisticsJobService {
             return "skipped";
         }
 
+        // Cancelling an order kills its job in the same transaction, so reaching
+        // here means the cancellation landed after this job was claimed. Either
+        // way the parcel must not be handed over: a cancelled order sent to
+        // RoadRush is a rider collecting cash for goods nobody is owed.
+        if (order.status === OrderStatus.cancelled) {
+            await this.prisma.getClient().logisticsJob.update({
+                where: { id: job.id },
+                data: {
+                    status: LogisticsJobStatus.cancelled,
+                    lastError: "Order was cancelled before it reached the courier",
+                    lockedAt: null,
+                    lockedBy: null,
+                },
+            });
+
+            logger.info("Skipped courier hand-off for a cancelled order", { orderId: order.id });
+            return "skipped";
+        }
+
         const attemptNo = job.attempts + 1;
         const payload = job.payload as unknown as PlaceOrderPayload;
 
@@ -260,6 +289,31 @@ export class LogisticsJobService {
         pickupAddressId: string | null
     ): Promise<void> {
         await this.prisma.getClient().$transaction(async (tx) => {
+            const existing = await tx.order.findUnique({
+                where: { id: orderId },
+                select: { status: true },
+            });
+
+            // The order can be cancelled between this job being claimed and
+            // RoadRush accepting it. There is no cancel call in their API, so
+            // the code is still recorded — without it nobody could chase the
+            // parcel — and the clash is written where staff will find it.
+            if (existing?.status === OrderStatus.cancelled) {
+                logger.error("RoadRush accepted an order that has since been cancelled", {
+                    orderId,
+                    orderCode,
+                });
+
+                await tx.orderStatusLog.create({
+                    data: {
+                        orderId,
+                        status: OrderStatus.cancelled,
+                        note: `RoadRush accepted this cancelled order as ${orderCode} — call them to stop the delivery`,
+                        internal: true,
+                    },
+                });
+            }
+
             await tx.order.update({
                 where: { id: orderId },
                 data: {
