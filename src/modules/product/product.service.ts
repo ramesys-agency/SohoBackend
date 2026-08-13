@@ -15,16 +15,17 @@ import { CheckoutService } from "../checkout/checkout.service.js";
 import {
     getCategoryIds,
     getCollectionProductIds,
-    getPlacementProductIds,
     getAvailableFilters,
     buildFilterConditions,
     buildSortOrder,
     buildPagination,
 } from "./helpers/get-all-products.js";
+import { AppPlacementService } from "../app-placement/app-placement.service.js";
 
 export class ProductService implements IProductService {
     private prisma: PrismaService = prisma;
     private checkout: CheckoutService = new CheckoutService();
+    private placements: AppPlacementService = new AppPlacementService();
 
     /**
      * Units a shopper can actually buy right now: stock on hand minus every
@@ -201,11 +202,13 @@ export class ProductService implements IProductService {
         } = query;
 
         // 1. Prepare Data for Filters
-        // placementId takes priority: return only products assigned to that specific placement
+        // placementId takes priority: return only the products that placement
+        // resolves to — hand-picked rows, or a category's live list with the
+        // admin's overrides applied.
         const [categoryIds, collectionProductIds] = await Promise.all([
             getCategoryIds(this.prisma.getClient(), categorySlug, categoryId),
             placementId
-                ? getPlacementProductIds(this.prisma.getClient(), placementId)
+                ? this.placements.resolveProductIds(placementId)
                 : getCollectionProductIds(this.prisma.getClient(), collectionSlug, collectionId),
         ]);
 
@@ -225,41 +228,74 @@ export class ProductService implements IProductService {
         const { skip, take } = buildPagination(Number(page), Number(limit));
 
         // 3. Execute Query
-        const [total, products] = await Promise.all([
-            this.prisma.getClient().product.count({ where }),
-            this.prisma.getClient().product.findMany({
-                where,
-                orderBy,
-                skip,
-                take,
-                include: {
-                    category: {
-                        select: {
-                            id: true,
-                            name: true,
-                            slug: true,
+        const listInclude = {
+            category: {
+                select: {
+                    id: true,
+                    name: true,
+                    slug: true,
+                },
+            },
+            variants: {
+                select: {
+                    id: true,
+                    colorName: true,
+                    colorValue: true,
+                    stockQty: true,
+                    basePrice: true,
+                    originalPrice: true,
+                    isDefault: true,
+                    images: {
+                        where: {
+                            isPrimary: true,
                         },
-                    },
-                    variants: {
-                        select: {
-                            id: true,
-                            colorName: true,
-                            colorValue: true,
-                            stockQty: true,
-                            basePrice: true,
-                            originalPrice: true,
-                            isDefault: true,
-                            images: {
-                                where: {
-                                    isPrimary: true,
-                                },
-                                take: 1,
-                            },
-                        },
+                        take: 1,
                     },
                 },
-            }),
-        ]);
+            },
+        };
+
+        const client = this.prisma.getClient();
+
+        // Every read of the list goes through here so the include — and so the
+        // inferred row type, relations and all — stays in one place.
+        const findProducts = (args: {
+            where: typeof where | { id: { in: string[] } };
+            orderBy?: typeof orderBy;
+            skip?: number;
+            take?: number;
+        }) => client.product.findMany({ ...args, include: listInclude });
+
+        // A placement's product list is a running order the admin arranged by
+        // hand, so when one is requested without an explicit sort, paginate
+        // over that order instead of letting the default createdAt sort
+        // scramble it. Ordering in the database would need a CASE over every
+        // id, so the ids are ranked here and only one page is hydrated.
+        const placementOrder = placementId && !sortBy ? (collectionProductIds ?? []) : null;
+
+        let total: number;
+        let products: Awaited<ReturnType<typeof findProducts>>;
+
+        if (placementOrder) {
+            const rank = new Map(placementOrder.map((id, index) => [id, index]));
+            const rankOf = (id: string) => rank.get(id) ?? Number.MAX_SAFE_INTEGER;
+
+            const matching = await client.product.findMany({ where, select: { id: true } });
+            const orderedIds = matching.map((p) => p.id).sort((a, b) => rankOf(a) - rankOf(b));
+
+            total = orderedIds.length;
+            const pageIds = orderedIds.slice(skip, skip + take);
+
+            const rows =
+                pageIds.length === 0 ? [] : await findProducts({ where: { id: { in: pageIds } } });
+
+            products = rows.sort((a, b) => rankOf(a.id) - rankOf(b.id));
+        } else {
+            [total, products] = await Promise.all([
+                client.product.count({ where }),
+                findProducts({ where, orderBy, skip, take }),
+            ]);
+        }
 
         // 4. Get Available Filters
         const availableFilters = await getAvailableFilters(

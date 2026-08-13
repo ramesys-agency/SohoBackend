@@ -15,4 +15,7 @@ enum SectionType {
     GRID_SECTION
     MID_BANNER
     SEE_ALL
+    /// The round category shortcuts along the top of a catalog tab. Always
+    /// category-sourced, so its products come from the category itself.
+    CATEGORY_CIRCLE
 }

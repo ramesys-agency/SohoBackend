@@ -29,17 +29,9 @@ export const getCategoryIds = async (
     return getCategoryDescendants(prisma, targetCategoryId);
 };
 
-export const getPlacementProductIds = async (
-    prisma: PrismaClient,
-    placementId: string
-): Promise<string[]> => {
-    const rows = await prisma.collectionPlacementProduct.findMany({
-        where: { placementId },
-        orderBy: { displayOrder: "asc" },
-        select: { productId: true },
-    });
-    return rows.map((r) => r.productId);
-};
+// A placement's products are resolved by AppPlacementService.resolveProductIds:
+// reading the rows directly would miss category-sourced placements, whose rows
+// are overrides rather than the list itself.
 
 export const getCollectionProductIds = async (
     prisma: PrismaClient,

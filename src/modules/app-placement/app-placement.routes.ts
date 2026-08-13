@@ -20,3 +20,5 @@ appPlacementRoutes.put("/:id", upload.single("image"), appPlacementController.up
 appPlacementRoutes.delete("/:id", appPlacementController.deletePlacement);
 appPlacementRoutes.post("/:id/products", appPlacementController.addPlacementProducts);
 appPlacementRoutes.delete("/:id/products", appPlacementController.removePlacementProducts);
+appPlacementRoutes.patch("/:id/products/reorder", appPlacementController.reorderPlacementProducts);
+appPlacementRoutes.post("/:id/products/reset", appPlacementController.resetPlacementProducts);

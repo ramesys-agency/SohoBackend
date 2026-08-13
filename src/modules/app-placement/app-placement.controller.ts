@@ -64,6 +64,7 @@ export class AppPlacementController {
                 isBanner?: string | boolean;
                 isActive?: string | boolean;
                 displayOrder?: string;
+                sourceCategoryId?: string;
                 sourcePlacementId?: string;
             };
 
@@ -92,6 +93,7 @@ export class AppPlacementController {
                 isActive: toBool(data.isActive),
                 image: imageUrl,
                 displayOrder: data.displayOrder ? Number(data.displayOrder) : undefined,
+                sourceCategoryId: data.sourceCategoryId || undefined,
                 sourcePlacementId: data.sourcePlacementId || undefined,
             });
 
@@ -136,6 +138,7 @@ export class AppPlacementController {
                 isBanner?: string | boolean;
                 isActive?: string | boolean;
                 displayOrder?: string;
+                sourceCategoryId?: string;
             };
 
             const imageUrl = await this.resolveImage(req, `placements/update-${id}`, data.page);
@@ -151,6 +154,9 @@ export class AppPlacementController {
                 isActive: toBool(data.isActive),
                 image: imageUrl,
                 displayOrder: data.displayOrder ? Number(data.displayOrder) : undefined,
+                // Empty string unlinks the category and drops the overrides.
+                sourceCategoryId:
+                    data.sourceCategoryId === undefined ? undefined : data.sourceCategoryId || null,
             });
 
             res.status(200).json(result);
@@ -195,6 +201,37 @@ export class AppPlacementController {
             const id = req.params["id"] as string;
             const { productIds } = req.body as { productIds: string[] };
             const result = await this.appPlacementService.removeProductsFromPlacement(id, productIds);
+            res.status(200).json(result);
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    reorderPlacementProducts = async (
+        req: Request,
+        res: Response,
+        next: NextFunction
+    ): Promise<void> => {
+        try {
+            const id = req.params["id"] as string;
+            const { productIds } = req.body as { productIds: string[] };
+            const result = await this.appPlacementService.reorderPlacementProducts(id, productIds);
+            res.status(200).json(result);
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    /// Drops every override so a category-sourced placement goes back to
+    /// showing exactly what its category holds.
+    resetPlacementProducts = async (
+        req: Request,
+        res: Response,
+        next: NextFunction
+    ): Promise<void> => {
+        try {
+            const id = req.params["id"] as string;
+            const result = await this.appPlacementService.resetPlacementProducts(id);
             res.status(200).json(result);
         } catch (error) {
             next(error);

@@ -85,6 +85,10 @@ export class CategoryService {
                 include: {
                     children: true,
                     genderImages: true, // Always include to allow robust fallbacks
+                    // Lets a caller label a subcategory with its parent without a
+                    // second lookup — and without depending on the parent happening
+                    // to fall inside the same filtered page.
+                    parent: { select: { id: true, name: true } },
                 },
                 orderBy: {
                     name: "asc",

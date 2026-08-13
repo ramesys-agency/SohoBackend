@@ -526,8 +526,84 @@ async function main() {
         });
     }
 
+    // ------------------------
+    // CATEGORY CIRCLES
+    // The round shortcuts along the top of each catalog tab. Unlike every
+    // placement above, these carry no product rows: their list is derived from
+    // the category at read time, so a product added to "Shirts" later shows up
+    // in the Shirts circle on its own. Rows only ever appear here when an admin
+    // pins, hides or reorders something.
+    // ------------------------
+    console.log("⭕ Seeding category circles...");
+
+    const CIRCLE_STYLE: Record<string, { bg: string; text: string }> = {
+        MEN: { bg: "1E293B", text: "FFFFFF" },
+        WOMEN: { bg: "BE185D", text: "FFFFFF" },
+        KIDS: { bg: "15803D", text: "FFFFFF" },
+    };
+
+    let circleCount = 0;
+
+    for (const gender of ["MEN", "WOMEN", "KIDS"] as const) {
+        for (const [index, category] of categories.entries()) {
+            const slug = `${category.slug}-${gender.toLowerCase()}-circle`;
+
+            const collection = await prisma.collection.upsert({
+                where: { slug },
+                update: { name: category.name, gender: { set: [gender] } },
+                create: {
+                    name: category.name,
+                    slug,
+                    gender: { set: [gender] },
+                },
+            });
+
+            const imageUrl = getPlaceholderUrl(
+                400,
+                400,
+                CIRCLE_STYLE[gender].bg,
+                CIRCLE_STYLE[gender].text,
+                `${category.name} - ${gender}`
+            );
+
+            const existing = await prisma.collectionPlacement.findUnique({
+                where: { collectionId: collection.id },
+            });
+
+            if (existing) {
+                await prisma.collectionPlacement.update({
+                    where: { id: existing.id },
+                    data: {
+                        page: gender,
+                        section: "CATEGORY_CIRCLE",
+                        sourceCategoryId: category.id,
+                        imageUrl,
+                        displayOrder: index + 1,
+                        isActive: true,
+                        isBanner: false,
+                    },
+                });
+            } else {
+                await prisma.collectionPlacement.create({
+                    data: {
+                        collectionId: collection.id,
+                        page: gender,
+                        section: "CATEGORY_CIRCLE",
+                        sourceCategoryId: category.id,
+                        imageUrl,
+                        displayOrder: index + 1,
+                        isActive: true,
+                        isBanner: false,
+                    },
+                });
+            }
+
+            circleCount++;
+        }
+    }
+
     console.log(
-        `✅ Seed completed! ${PRODUCT_COUNT} products across ${placementSeeds.length} placements.`
+        `✅ Seed completed! ${PRODUCT_COUNT} products across ${placementSeeds.length} placements, plus ${circleCount} category circles.`
     );
 }
 

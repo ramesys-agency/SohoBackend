@@ -49,6 +49,13 @@ model CollectionPlacement {
     isBanner Boolean @default(false)
     imageUrl String?
 
+    /// When set, this placement's product list is *derived* from the category
+    /// (and everything beneath it) rather than hand-picked. Rows in
+    /// CollectionPlacementProduct then act as overrides on top of that live
+    /// list instead of being the list itself. Drives the catalog circle row.
+    sourceCategoryId String?
+    sourceCategory   Category? @relation("CategoryPlacements", fields: [sourceCategoryId], references: [id], onDelete: Cascade)
+
     page    PageType
     section SectionType
 
@@ -60,12 +67,28 @@ model CollectionPlacement {
     products CollectionPlacementProduct[]
 
     @@index([page, section, displayOrder])
+    @@index([sourceCategoryId])
+}
+
+/// What a row means depends on whether its placement is category-sourced.
+/// Hand-picked placements only ever use INCLUDE — the rows *are* the list.
+enum PlacementProductMode {
+    /// Force this product in, even if the source category does not hold it.
+    /// Survives the product being recategorised.
+    INCLUDE
+    /// Drop this product from the derived list.
+    EXCLUDE
+    /// Position only. The product still has to be in the source category to
+    /// show, so it disappears when it leaves — it just has a manual slot
+    /// while it is there.
+    ORDER
 }
 
 model CollectionPlacementProduct {
     placementId  String
     productId    String
-    displayOrder Int    @default(0)
+    displayOrder Int                  @default(0)
+    mode         PlacementProductMode @default(INCLUDE)
 
     placement CollectionPlacement @relation(fields: [placementId], references: [id], onDelete: Cascade)
     product   Product             @relation(fields: [productId], references: [id])
