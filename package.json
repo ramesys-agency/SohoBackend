@@ -32,7 +32,9 @@
         "docker:down": "docker compose down",
         "db:backfill-category-placements": "tsx src/scripts/backfill-category-gender-placements.ts",
         "db:sync-locations": "tsx src/scripts/sync-locations.ts",
-        "db:sync-locations:prod": "node dist/scripts/sync-locations.js"
+        "db:sync-locations:prod": "node dist/scripts/sync-locations.js",
+        "db:seed-review-account": "tsx src/scripts/seed-review-account.ts",
+        "db:seed-review-account:prod": "node dist/scripts/seed-review-account.js"
     },
     "prisma": {
         "seed": "tsx prisma/seed.ts"
