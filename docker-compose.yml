@@ -43,6 +43,13 @@ services:
         networks:
             - internal
             - external
+            - coolify          # Must be on Coolify's proxy network so Traefik can reach it
+        labels:
+            # The container sits on three networks, so without this Traefik picks one
+            # of its IPs at random. Land on internal/external and every request to
+            # api.soho-bd.com blackholes into a 504 after the 30s dial timeout — which
+            # is what happened on the 2026-08-31 redeploy, with no code change.
+            - "traefik.docker.network=coolify"
 
     postgres:
         image: postgres:16-alpine
