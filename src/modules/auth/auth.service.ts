@@ -653,7 +653,7 @@ export class AuthService {
 
         const resetLink = `${config.app.frontendUrl}/reset-password?token=${resetToken}`;
 
-        // Send email with nodemailer/fallback
+        // Send email with Resend/fallback
         await this.mailService.sendPasswordResetLink(email, resetLink, resetToken);
 
         // The link must never travel back over the API — anyone could then reset
@@ -725,7 +725,7 @@ export class AuthService {
         const attemptKey = `otp:attempts:${email}`;
         await redis.set(attemptKey, 0, { ttl: 300 });
 
-        // Send actual email using Nodemailer via MailService (or fallback console-log)
+        // Send actual email using Resend via MailService (or fallback console-log)
         await this.mailService.sendOTP(email, otpCode);
 
         return {

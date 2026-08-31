@@ -1,44 +1,68 @@
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
 import { config } from "../../config/index.js";
+import { logger } from "../../config/logger.js";
 
 export class MailService {
-    private transporter: nodemailer.Transporter | null = null;
+    private resend: Resend | null = null;
 
     constructor() {
-        if (config.mail.host && config.mail.user && config.mail.pass) {
-            this.transporter = nodemailer.createTransport({
-                host: config.mail.host,
-                port: config.mail.port,
-                secure: config.mail.port === 465,
-                auth: {
-                    user: config.mail.user,
-                    pass: config.mail.pass,
-                },
-            });
+        if (config.mail.resendApiKey) {
+            this.resend = new Resend(config.mail.resendApiKey);
         }
     }
 
-    async sendMail(to: string, subject: string, text: string, html: string): Promise<boolean> {
-        if (this.transporter) {
+    async sendMail(
+        to: string | string[],
+        subject: string,
+        text: string,
+        html: string
+    ): Promise<boolean> {
+        // Resend takes an array; callers that pass a comma-joined string still work.
+        const recipients = (Array.isArray(to) ? to : to.split(","))
+            .map((address) => address.trim())
+            .filter(Boolean);
+
+        if (this.resend && recipients.length > 0) {
             try {
-                await this.transporter.sendMail({
+                const { data, error } = await this.resend.emails.send({
                     from: config.mail.from,
-                    to,
+                    to: recipients,
                     subject,
                     text,
                     html,
+                    ...(config.mail.replyTo ? { replyTo: config.mail.replyTo } : {}),
                 });
-                console.log(`[SMTP] Email successfully sent to ${to}`);
-                return true;
+
+                // The SDK reports API-level failures on `error` rather than throwing,
+                // so this branch is the one that actually catches rejected sends.
+                if (error) {
+                    logger.error("Resend rejected the email, falling back to console logging", {
+                        to: recipients,
+                        subject,
+                        error: error.message,
+                        name: error.name,
+                    });
+                } else {
+                    logger.info("Email sent via Resend", {
+                        to: recipients,
+                        subject,
+                        id: data?.id,
+                    });
+                    return true;
+                }
             } catch (error) {
-                console.error("[SMTP] Failed to send email via SMTP, falling back to console logging:", error);
+                logger.error("Failed to send email via Resend, falling back to console logging", {
+                    to: recipients,
+                    subject,
+                    error: error instanceof Error ? error.message : String(error),
+                });
             }
         }
 
-        // Fallback/Mock Mode if keys are not configured or SMTP fails
+        // Fallback/Mock Mode if the API key is not configured or Resend fails
         console.log("\n=================================================");
         console.log(`[MAIL SERVICE] (DEVELOPMENT/FALLBACK MOCK SEND)`);
-        console.log(`To: ${to}`);
+        console.log(`To: ${recipients.join(", ")}`);
         console.log(`Subject: ${subject}`);
         console.log(`Text Content:\n${text}`);
         console.log("=================================================\n");

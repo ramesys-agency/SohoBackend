@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "../../config/prisma.js";
 import type {
     GetProductsQueryDto,
@@ -19,8 +20,23 @@ import {
     buildFilterConditions,
     buildSortOrder,
     buildPagination,
+    buildPriceOrderedIds,
+    isPriceSort,
 } from "./helpers/get-all-products.js";
+import {
+    buildSearchFacets,
+    rankBySearchRelevance,
+    tokenize,
+    SEARCH_CANDIDATE_LIMIT,
+} from "./helpers/product-search.js";
 import { AppPlacementService } from "../app-placement/app-placement.service.js";
+
+/** The one image that stands for a variant in a list. */
+const THUMBNAIL_ORDER: Prisma.ProductVariantImageOrderByWithRelationInput[] = [
+    { isPrimary: "desc" },
+    { displayOrder: "asc" },
+    { createdAt: "asc" },
+];
 
 export class ProductService implements IProductService {
     private prisma: PrismaService = prisma;
@@ -122,7 +138,11 @@ export class ProductService implements IProductService {
             include: {
                 variants: {
                     include: {
-                        images: true,
+                        // The admin arranges these by hand, so hand them back in
+                        // that order rather than whatever the table returns.
+                        images: {
+                            orderBy: [{ displayOrder: "asc" }, { createdAt: "asc" }],
+                        },
                     },
                 },
                 reviews: {
@@ -194,6 +214,9 @@ export class ProductService implements IProductService {
             gender,
             minPrice,
             maxPrice,
+            size,
+            color,
+            inStock,
             search,
             sortBy,
             page = 1,
@@ -213,16 +236,30 @@ export class ProductService implements IProductService {
         ]);
 
         // 2. Build Query Parts
-        const where = buildFilterConditions({
+        // `isPublished=all` is how the admin list asks for drafts alongside
+        // live products; the storefront never sends it and stays published-only.
+        const publishedFilter =
+            isPublished === undefined
+                ? undefined
+                : String(isPublished) === "all"
+                  ? ("all" as const)
+                  : String(isPublished) === "true";
+
+        const filters = {
             categoryIds: categoryIds || undefined,
             collectionProductIds: collectionProductIds || undefined,
-            isPublished: isPublished !== undefined ? String(isPublished) === "true" : undefined,
+            isPublished: publishedFilter,
             gender: gender || undefined,
-            minPrice: minPrice || undefined,
-            maxPrice: maxPrice || undefined,
+            minPrice: minPrice !== undefined ? Number(minPrice) : undefined,
+            maxPrice: maxPrice !== undefined ? Number(maxPrice) : undefined,
+            size: size || undefined,
+            color: color || undefined,
+            inStock: inStock !== undefined ? String(inStock) === "true" : undefined,
             search: search || undefined,
             dynamicAttributes: dynamicAttributes || undefined,
-        });
+        };
+
+        const where = buildFilterConditions(filters);
 
         const orderBy = buildSortOrder(sortBy);
         const { skip, take } = buildPagination(Number(page), Number(limit));
@@ -246,9 +283,9 @@ export class ProductService implements IProductService {
                     originalPrice: true,
                     isDefault: true,
                     images: {
-                        where: {
-                            isPrimary: true,
-                        },
+                        // Prefer the primary image, but a variant whose rows
+                        // predate that flag still deserves a thumbnail.
+                        orderBy: THUMBNAIL_ORDER,
                         take: 1,
                     },
                 },
@@ -273,28 +310,98 @@ export class ProductService implements IProductService {
         // id, so the ids are ranked here and only one page is hydrated.
         const placementOrder = placementId && !sortBy ? (collectionProductIds ?? []) : null;
 
-        let total: number;
-        let products: Awaited<ReturnType<typeof findProducts>>;
+        // Three orders cannot be expressed as a Prisma `orderBy`: a placement's
+        // hand-arranged list, cheapest-variant price, and search relevance. Each
+        // ranks the matching ids here and only the requested page is hydrated.
+        const resolveOrderedIds = async (
+            filterWhere: typeof where
+        ): Promise<string[] | null> => {
+            if (placementOrder) {
+                const rank = new Map(placementOrder.map((id, index) => [id, index]));
+                const matching = await client.product.findMany({
+                    where: filterWhere,
+                    select: { id: true },
+                });
+                return matching
+                    .map((p) => p.id)
+                    .sort(
+                        (a, b) =>
+                            (rank.get(a) ?? Number.MAX_SAFE_INTEGER) -
+                            (rank.get(b) ?? Number.MAX_SAFE_INTEGER)
+                    );
+            }
 
-        if (placementOrder) {
-            const rank = new Map(placementOrder.map((id, index) => [id, index]));
-            const rankOf = (id: string) => rank.get(id) ?? Number.MAX_SAFE_INTEGER;
+            if (isPriceSort(sortBy)) {
+                const matching = await client.product.findMany({
+                    where: filterWhere,
+                    select: { id: true },
+                });
+                return buildPriceOrderedIds(
+                    client,
+                    matching.map((p) => p.id),
+                    sortBy === "price_asc" ? "asc" : "desc"
+                );
+            }
 
-            const matching = await client.product.findMany({ where, select: { id: true } });
-            const orderedIds = matching.map((p) => p.id).sort((a, b) => rankOf(a) - rankOf(b));
+            // Searching without an explicit sort means "best match first".
+            if (search && (!sortBy || sortBy === "relevance")) {
+                const candidates = await client.product.findMany({
+                    where: filterWhere,
+                    take: SEARCH_CANDIDATE_LIMIT,
+                    orderBy: { overallRating: "desc" },
+                    select: {
+                        id: true,
+                        name: true,
+                        description: true,
+                        overallRating: true,
+                        reviewCount: true,
+                        category: { select: { name: true } },
+                        variants: { select: { sku: true, colorName: true, size: true } },
+                    },
+                });
+                return rankBySearchRelevance(candidates, search).map((p) => p.id);
+            }
 
-            total = orderedIds.length;
-            const pageIds = orderedIds.slice(skip, skip + take);
+            return null;
+        };
 
-            const rows =
-                pageIds.length === 0 ? [] : await findProducts({ where: { id: { in: pageIds } } });
+        const runQuery = async (filterWhere: typeof where) => {
+            const orderedIds = await resolveOrderedIds(filterWhere);
 
-            products = rows.sort((a, b) => rankOf(a.id) - rankOf(b.id));
-        } else {
-            [total, products] = await Promise.all([
-                client.product.count({ where }),
-                findProducts({ where, orderBy, skip, take }),
+            if (orderedIds) {
+                const rank = new Map(orderedIds.map((id, index) => [id, index]));
+                const pageIds = orderedIds.slice(skip, skip + take);
+                const rows =
+                    pageIds.length === 0
+                        ? []
+                        : await findProducts({ where: { id: { in: pageIds } } });
+
+                return {
+                    // Ranked ids are the whole result set (relevance caps the
+                    // pool at SEARCH_CANDIDATE_LIMIT), so they also give the total.
+                    total: orderedIds.length,
+                    products: rows.sort(
+                        (a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0)
+                    ),
+                };
+            }
+
+            const [total, products] = await Promise.all([
+                client.product.count({ where: filterWhere }),
+                findProducts({ where: filterWhere, orderBy, skip, take }),
             ]);
+            return { total, products };
+        };
+
+        let { total, products } = await runQuery(where);
+
+        // A multi-word search that matches nothing is usually one word too
+        // specific ("navy linen shirt" when the colour is "Midnight"). Rather
+        // than show an empty screen, fall back to matching any of the words.
+        if (total === 0 && search && tokenize(search).length > 1) {
+            ({ total, products } = await runQuery(
+                buildFilterConditions({ ...filters, matchAllSearchTokens: false })
+            ));
         }
 
         // 4. Get Available Filters
@@ -394,76 +501,219 @@ export class ProductService implements IProductService {
         };
     }
 
+    /**
+     * The storefront's search: a query string, the filters the shopper picked,
+     * and the facets that let them pick the next one. Results come back ranked
+     * by relevance unless an explicit sort is asked for.
+     */
     async searchProducts(
         query: SearchProductsQueryDto,
         userId?: string
     ): Promise<SearchProductsResponseDto> {
-        const { q, limit = 10 } = query;
+        const {
+            q,
+            limit = 20,
+            page = 1,
+            categoryId,
+            categorySlug,
+            gender,
+            minPrice,
+            maxPrice,
+            size,
+            color,
+            inStock,
+            sortBy,
+        } = query;
 
-        if (!q || q.trim().length === 0) {
-            return { success: true, query: q ?? "", count: 0, products: [] };
-        }
+        const searchTerm = (q ?? "").trim();
+        const client = this.prisma.getClient();
 
-        const searchTerm = q.trim();
+        const hasFilter =
+            Boolean(categoryId || categorySlug || gender || size || color || inStock) ||
+            minPrice !== undefined ||
+            maxPrice !== undefined;
 
-        const products = (await this.prisma.getClient().product.findMany({
-            where: {
-                isPublished: true,
-                OR: [
-                    { name: { contains: searchTerm, mode: "insensitive" } },
-                    { description: { contains: searchTerm, mode: "insensitive" } },
-                ],
-            },
-            take: Number(limit),
-            orderBy: { overallRating: "desc" },
-            include: {
-                variants: {
-                    select: {
-                        id: true,
-                        basePrice: true,
-                        originalPrice: true,
-                        stockQty: true,
-                        isDefault: true,
-                        images: {
-                            where: { isPrimary: true },
-                            take: 1,
-                            select: { imageUrl: true },
-                        },
+        // Nothing typed and nothing picked is the search screen at rest: no
+        // results to show, but the filter sheet still needs to know what the
+        // catalogue is made of before the shopper can narrow it.
+        if (!searchTerm && !hasFilter) {
+            const catalogue = await client.product.findMany({
+                where: buildFilterConditions({}),
+                take: SEARCH_CANDIDATE_LIMIT,
+                orderBy: { overallRating: "desc" },
+                select: {
+                    gender: true,
+                    category: { select: { id: true, name: true, slug: true } },
+                    variants: {
+                        select: { size: true, colorName: true, colorValue: true, basePrice: true },
                     },
                 },
+            });
+
+            return {
+                success: true,
+                query: "",
+                count: 0,
+                pagination: { page: 1, limit: Number(limit), total: 0, totalPages: 0 },
+                facets: buildSearchFacets(catalogue),
+                products: [],
+            };
+        }
+
+        const categoryIds = await getCategoryIds(client, categorySlug, categoryId);
+
+        const filters = {
+            categoryIds: categoryIds || undefined,
+            gender: gender || undefined,
+            minPrice: minPrice !== undefined ? Number(minPrice) : undefined,
+            maxPrice: maxPrice !== undefined ? Number(maxPrice) : undefined,
+            size: size || undefined,
+            color: color || undefined,
+            inStock: inStock !== undefined ? String(inStock) === "true" : undefined,
+            search: searchTerm || undefined,
+        };
+
+        const candidateSelect = {
+            id: true,
+            name: true,
+            description: true,
+            gender: true,
+            overallRating: true,
+            reviewCount: true,
+            createdAt: true,
+            category: { select: { id: true, name: true, slug: true } },
+            variants: {
+                select: {
+                    id: true,
+                    sku: true,
+                    size: true,
+                    colorName: true,
+                    colorValue: true,
+                    stockQty: true,
+                    basePrice: true,
+                    originalPrice: true,
+                    isDefault: true,
+                    images: { orderBy: THUMBNAIL_ORDER, take: 1, select: { imageUrl: true } },
+                },
             },
-        })) as any[];
+        };
+
+        // Relevance and cheapest-variant price both need the matches in hand, so
+        // a bounded pool is pulled once and ranked, sliced and counted here.
+        const fetchCandidates = (matchAllSearchTokens: boolean) =>
+            client.product.findMany({
+                where: buildFilterConditions({ ...filters, matchAllSearchTokens }),
+                take: SEARCH_CANDIDATE_LIMIT,
+                orderBy: { overallRating: "desc" },
+                select: candidateSelect,
+            });
+
+        let candidates = await fetchCandidates(true);
+
+        // Same widening as the catalogue list: one word too many should not
+        // leave the shopper staring at "no products found".
+        let widened = false;
+        if (candidates.length === 0 && searchTerm && tokenize(searchTerm).length > 1) {
+            candidates = await fetchCandidates(false);
+            widened = candidates.length > 0;
+        }
+
+        // Facets come from the query before the variant-level filters are
+        // applied, otherwise picking "red" leaves red as the only colour on
+        // offer and the shopper can never switch to blue.
+        const hasVariantFilter =
+            Boolean(size || color || inStock) || minPrice !== undefined || maxPrice !== undefined;
+        const facetCandidates = hasVariantFilter
+            ? await client.product.findMany({
+                  where: buildFilterConditions({
+                      ...filters,
+                      minPrice: undefined,
+                      maxPrice: undefined,
+                      size: undefined,
+                      color: undefined,
+                      inStock: undefined,
+                      matchAllSearchTokens: !widened,
+                  }),
+                  take: SEARCH_CANDIDATE_LIMIT,
+                  orderBy: { overallRating: "desc" },
+                  select: candidateSelect,
+              })
+            : candidates;
+
+        const priceOf = (product: (typeof candidates)[number]): number => {
+            const prices = product.variants.map((v) => Number(v.basePrice));
+            return prices.length > 0 ? Math.min(...prices) : 0;
+        };
+
+        const sorted = (() => {
+            switch (sortBy) {
+                case "price_asc":
+                    return [...candidates].sort((a, b) => priceOf(a) - priceOf(b));
+                case "price_desc":
+                    return [...candidates].sort((a, b) => priceOf(b) - priceOf(a));
+                case "newest":
+                    return [...candidates].sort(
+                        (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
+                    );
+                case "rating":
+                    return [...candidates].sort(
+                        (a, b) => Number(b.overallRating) - Number(a.overallRating)
+                    );
+                case "popularity":
+                    return [...candidates].sort((a, b) => b.reviewCount - a.reviewCount);
+                default:
+                    // No query to rank against (filters only) keeps the
+                    // rating order the database already applied.
+                    return searchTerm ? rankBySearchRelevance(candidates, searchTerm) : candidates;
+            }
+        })();
+
+        const total = sorted.length;
+        const take = Math.max(1, Number(limit));
+        const currentPage = Math.max(1, Number(page));
+        const pageProducts = sorted.slice((currentPage - 1) * take, currentPage * take);
 
         const reserved = await this.getAvailability(
-            products.flatMap((p: any) => p.variants.map((v: any) => v.id))
+            pageProducts.flatMap((p) => p.variants.map((v) => v.id))
         );
 
-        // Optionally enrich with wishlist info
         let wishlistedVariantIds = new Set<string>();
-        if (userId && products.length > 0) {
-            const allVariantIds = products.flatMap((p: any) => p.variants.map((v: any) => v.id));
-            const wishlisted = await this.prisma.getClient().wishlist.findMany({
-                where: { userId, variantId: { in: allVariantIds } },
+        if (userId && pageProducts.length > 0) {
+            const variantIds = pageProducts.flatMap((p) => p.variants.map((v) => v.id));
+            const wishlisted = await client.wishlist.findMany({
+                where: { userId, variantId: { in: variantIds } },
                 select: { variantId: true },
             });
             wishlistedVariantIds = new Set(wishlisted.map((w) => w.variantId));
         }
 
-        const mappedProducts: SearchProductResultDto[] = products.map((p: any) => {
-            const defaultVariant = p.variants.find((v: any) => v.isDefault) ?? p.variants[0];
+        const mappedProducts: SearchProductResultDto[] = pageProducts.map((p) => {
+            const defaultVariant = p.variants.find((v) => v.isDefault) ?? p.variants[0];
+            const colors = new Map<string, { colorName: string; colorValue: string }>();
+            p.variants.forEach((v) => {
+                if (v.colorName && v.colorValue) {
+                    colors.set(`${v.colorName}-${v.colorValue}`, {
+                        colorName: v.colorName,
+                        colorValue: v.colorValue,
+                    });
+                }
+            });
+
             const result: SearchProductResultDto = {
                 id: p.id,
                 name: p.name,
                 slug: p.id,
                 price: Number(defaultVariant?.basePrice ?? 0),
-                primaryImage: defaultVariant?.images[0]?.imageUrl,
-                variantId: defaultVariant?.id,
+                ...(defaultVariant?.images[0]?.imageUrl && {
+                    primaryImage: defaultVariant.images[0].imageUrl,
+                }),
+                ...(defaultVariant && { variantId: defaultVariant.id }),
                 isWishlisted: defaultVariant ? wishlistedVariantIds.has(defaultVariant.id) : false,
-                inStock: p.variants.some(
-                    (v: any) => v.stockQty - (reserved.get(v.id) ?? 0) > 0
-                ),
+                inStock: p.variants.some((v) => v.stockQty - (reserved.get(v.id) ?? 0) > 0),
                 rating: Number(p.overallRating),
                 reviewCount: p.reviewCount,
+                availableColors: Array.from(colors.values()),
+                ...(p.category && { category: p.category }),
             };
             if (defaultVariant?.originalPrice) {
                 result.originalPrice = Number(defaultVariant.originalPrice);
@@ -474,7 +724,17 @@ export class ProductService implements IProductService {
         return {
             success: true,
             query: searchTerm,
+            ...(widened && { widened: true }),
             count: mappedProducts.length,
+            pagination: {
+                page: currentPage,
+                limit: take,
+                total,
+                totalPages: Math.ceil(total / take),
+            },
+            // Facets describe everything the query matched, not just this page,
+            // so the filter sheet offers options that lead somewhere.
+            facets: buildSearchFacets(facetCandidates),
             products: mappedProducts,
         };
     }

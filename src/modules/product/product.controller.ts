@@ -3,7 +3,11 @@ import { logger } from "../../config/logger.js";
 import { ProductService } from "./product.service.js";
 import type { IProductService } from "./product.interface.js";
 import type { SearchProductsQueryDto } from "./product.types.js";
-import { createProductSchema, updateProductSchema } from "./product.schema.js";
+import {
+    createProductSchema,
+    searchProductsQuerySchema,
+    updateProductSchema,
+} from "./product.schema.js";
 
 export class ProductController {
     private productService: IProductService = new ProductService();
@@ -63,23 +67,31 @@ export class ProductController {
 
     searchProducts = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
         try {
-            const { q, limit } = req.query as { q?: string; limit?: string };
-            const userId = req.user?.id;
+            const parsed = searchProductsQuerySchema.safeParse(req.query);
 
-            if (!q || q.trim().length === 0) {
+            if (!parsed.success) {
                 res.status(400).json({
                     success: false,
-                    message: "Query parameter 'q' is required",
+                    message: "Invalid search parameters",
+                    error: parsed.error.issues,
                 });
                 return;
             }
 
-            const searchQuery: SearchProductsQueryDto = { q: q.trim() };
-            if (limit !== undefined) searchQuery.limit = Number(limit);
+            const searchQuery = parsed.data as SearchProductsQueryDto;
 
-            const result = await this.productService.searchProducts(searchQuery, userId);
+            // A query with neither a term nor a filter is answered rather than
+            // rejected: it returns no products, but the facets the filter sheet
+            // opens with.
+            const result = await this.productService.searchProducts(
+                searchQuery,
+                req.user?.id
+            );
 
-            logger.info("Product search completed", { q, count: result.count });
+            logger.info("Product search completed", {
+                q: searchQuery.q,
+                total: result.pagination.total,
+            });
             res.status(200).json(result);
         } catch (error) {
             next(error);

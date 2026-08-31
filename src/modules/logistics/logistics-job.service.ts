@@ -503,7 +503,7 @@ export class LogisticsJobService {
         `;
 
         await this.mail.sendMail(
-            recipients.join(", "),
+            recipients,
             `[Soho] Manual shipping required — order ${reference}`,
             lines.join("\n"),
             html

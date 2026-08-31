@@ -193,12 +193,12 @@ export const envSchema = z.object({
     LICENSE_KEY: z.string().optional(),
     LICENSE_SERVICE_URL: z.string().url().optional(),
 
-    // SMTP (Nodemailer)
-    SMTP_HOST: z.string().optional(),
-    SMTP_PORT: z.string().optional().transform((v) => v ? parseInt(v, 10) : 587),
-    SMTP_USER: z.string().optional(),
-    SMTP_PASS: z.string().optional(),
-    SMTP_FROM: z.string().optional().default("Soho <noreply@soho.com>"),
+    // Mail (Resend)
+    RESEND_API_KEY: z.string().optional(),
+    MAIL_FROM: z.string().optional().default("Soho <noreply@soho.com>"),
+    // Resend only accepts a verified sender, so bounces/complaints come back to
+    // this address instead of the noreply mailbox nobody watches.
+    MAIL_REPLY_TO: z.string().optional(),
 });
 
 

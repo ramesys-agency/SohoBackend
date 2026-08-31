@@ -135,11 +135,9 @@ export const config = {
     },
     
     mail: {
-        host: env.SMTP_HOST,
-        port: env.SMTP_PORT,
-        user: env.SMTP_USER,
-        pass: env.SMTP_PASS,
-        from: env.SMTP_FROM,
+        resendApiKey: env.RESEND_API_KEY,
+        from: env.MAIL_FROM,
+        replyTo: env.MAIL_REPLY_TO,
         adminAlertEmails: env.ADMIN_ALERT_EMAILS,
     },
 } as const;

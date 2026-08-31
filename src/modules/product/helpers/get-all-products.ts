@@ -1,6 +1,7 @@
 // --- Helpers ---
 
 import type { PrismaClient } from "@prisma/client";
+import { buildProductSearchWhere } from "./product-search.js";
 
 export const getCategoryIds = async (
     prisma: PrismaClient,
@@ -122,14 +123,27 @@ export const getCategoryDescendants = async (
 
 // --- Builders ---
 
+/** Query strings arrive as a single value, a repeated key, or a CSV list. */
+const toList = (value: string | string[] | undefined): string[] => {
+    if (value === undefined || value === null) return [];
+    const raw = Array.isArray(value) ? value : String(value).split(",");
+    return raw.map((v) => v.trim()).filter(Boolean);
+};
+
 export const buildFilterConditions = (params: {
     categoryIds?: string[] | undefined;
     collectionProductIds?: string[] | undefined;
-    isPublished?: boolean | undefined;
+    /** `"all"` drops the filter entirely — the admin list needs drafts too. */
+    isPublished?: boolean | "all" | undefined;
     gender?: string | string[] | undefined;
     minPrice?: number | undefined;
     maxPrice?: number | undefined;
+    size?: string | string[] | undefined;
+    color?: string | string[] | undefined;
+    inStock?: boolean | undefined;
     search?: string | undefined;
+    /** Widen a search that found nothing: any word may match instead of all. */
+    matchAllSearchTokens?: boolean | undefined;
     dynamicAttributes?: Record<string, any>;
 }): any => {
     const {
@@ -139,42 +153,65 @@ export const buildFilterConditions = (params: {
         gender,
         minPrice,
         maxPrice,
+        size,
+        color,
+        inStock,
         search,
+        matchAllSearchTokens = true,
         dynamicAttributes,
     } = params;
+    // Soft-deleted products are gone as far as every caller is concerned.
     const where: any = {
         isPublished: true,
+        deletedAt: null,
     };
 
     if (categoryIds) {
         where.categoryId = { in: categoryIds };
-    } else if (categoryIds === undefined && params.categoryIds) {
-        // Explicitly undefined categoryIds means invalid slug was passed
-        // Logic handled in getCategoryIds to return undefined or throws?
-        // Actually getCategoryIds returns string[] | undefined.
-        // If I return empty array -> no match.
-        // If I return undefined -> no filter.
     }
 
     if (collectionProductIds) {
         where.id = { in: collectionProductIds };
     }
 
-    if (isPublished !== undefined) {
+    if (isPublished === "all") {
+        delete where.isPublished;
+    } else if (isPublished !== undefined) {
         where.isPublished = isPublished;
     }
 
+    // Price, size and colour live on the variant, and they have to hold on the
+    // *same* variant: a red L and a blue M is not a match for "red, M".
+    const variantWhere: any = {};
     if (minPrice !== undefined || maxPrice !== undefined) {
-        where.basePrice = {};
-        if (minPrice !== undefined) where.basePrice.gte = Number(minPrice);
-        if (maxPrice !== undefined) where.basePrice.lte = Number(maxPrice);
+        variantWhere.basePrice = {};
+        if (minPrice !== undefined) variantWhere.basePrice.gte = Number(minPrice);
+        if (maxPrice !== undefined) variantWhere.basePrice.lte = Number(maxPrice);
+    }
+    const sizes = toList(size);
+    if (sizes.length > 0) {
+        variantWhere.size = { in: sizes, mode: "insensitive" };
+    }
+    const colors = toList(color);
+    if (colors.length > 0) {
+        variantWhere.OR = [
+            { colorName: { in: colors, mode: "insensitive" } },
+            { colorValue: { in: colors, mode: "insensitive" } },
+        ];
+    }
+    // Reservations held by shoppers mid-checkout are subtracted when the
+    // response is built; this only drops variants with nothing on the shelf.
+    if (inStock) {
+        variantWhere.stockQty = { gt: 0 };
+    }
+    if (Object.keys(variantWhere).length > 0) {
+        where.variants = { some: variantWhere };
     }
 
-    if (search) {
-        where.OR = [
-            { name: { contains: search, mode: "insensitive" } },
-            { description: { contains: search, mode: "insensitive" } },
-        ];
+    const searchWhere = buildProductSearchWhere(search, { matchAll: matchAllSearchTokens });
+    if (searchWhere) {
+        if (!where.AND) where.AND = [];
+        where.AND.push(searchWhere);
     }
 
     if (gender && gender !== "ALL") {
@@ -209,17 +246,27 @@ export const buildFilterConditions = (params: {
     return where;
 };
 
+/**
+ * Sorts the database can do on its own. Price lives on the variants, so
+ * `price_asc`/`price_desc` are ranked by the service instead — see
+ * `buildPriceOrderedIds`.
+ */
 export const buildSortOrder = (sortBy?: string): any => {
     const orderBy: any = {};
     switch (sortBy) {
-        case "price_asc":
-            orderBy.basePrice = "asc";
-            break;
-        case "price_desc":
-            orderBy.basePrice = "desc";
-            break;
         case "newest":
+        case "createdAt_desc":
             orderBy.createdAt = "desc";
+            break;
+        case "oldest":
+        case "createdAt_asc":
+            orderBy.createdAt = "asc";
+            break;
+        case "name_asc":
+            orderBy.name = "asc";
+            break;
+        case "name_desc":
+            orderBy.name = "desc";
             break;
         case "rating":
             orderBy.overallRating = "desc";
@@ -231,6 +278,39 @@ export const buildSortOrder = (sortBy?: string): any => {
             orderBy.createdAt = "desc";
     }
     return orderBy;
+};
+
+export const isPriceSort = (sortBy?: string): sortBy is "price_asc" | "price_desc" =>
+    sortBy === "price_asc" || sortBy === "price_desc";
+
+/**
+ * Product ids ordered by their cheapest variant. Prisma cannot order a product
+ * by an aggregate over its variants, so the matching ids are ranked here; the
+ * caller then hydrates only the page it needs.
+ */
+export const buildPriceOrderedIds = async (
+    prisma: PrismaClient,
+    productIds: string[],
+    direction: "asc" | "desc"
+): Promise<string[]> => {
+    if (productIds.length === 0) return [];
+
+    const grouped = await prisma.productVariant.groupBy({
+        by: ["productId"],
+        where: { productId: { in: productIds } },
+        _min: { basePrice: true },
+    });
+
+    const priceOf = new Map(grouped.map((g) => [g.productId, Number(g._min.basePrice ?? 0)]));
+
+    // A product with no variants has no price; it sorts last either way.
+    const fallback = direction === "asc" ? Number.MAX_SAFE_INTEGER : -1;
+
+    return [...productIds].sort((a, b) => {
+        const priceA = priceOf.get(a) ?? fallback;
+        const priceB = priceOf.get(b) ?? fallback;
+        return direction === "asc" ? priceA - priceB : priceB - priceA;
+    });
 };
 
 export const buildPagination = (page: number, limit: number): { skip: number; take: number } => {

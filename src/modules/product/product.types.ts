@@ -37,11 +37,26 @@ export interface GetProductsQueryDto {
     collectionSlug?: string;
     placementId?: string;
     gender?: string | string[];
-    isPublished?: boolean;
+    /** `"all"` includes drafts — the admin list, not the storefront. */
+    isPublished?: boolean | "all";
     minPrice?: number;
     maxPrice?: number;
+    size?: string | string[];
+    color?: string | string[];
+    inStock?: boolean;
     search?: string;
-    sortBy?: "price_asc" | "price_desc" | "newest" | "rating" | "popularity";
+    sortBy?:
+        | "relevance"
+        | "price_asc"
+        | "price_desc"
+        | "newest"
+        | "oldest"
+        | "createdAt_asc"
+        | "createdAt_desc"
+        | "name_asc"
+        | "name_desc"
+        | "rating"
+        | "popularity";
     page?: number;
     limit?: number;
     [key: string]: any; // For dynamic attribute filters
@@ -95,8 +110,20 @@ export interface GetProductsResponseDto {
 }
 
 export interface SearchProductsQueryDto {
-    q: string;
+    q?: string;
     limit?: number;
+    page?: number;
+    categoryId?: string;
+    categorySlug?: string;
+    gender?: string | string[];
+    minPrice?: number;
+    maxPrice?: number;
+    /** One size, a repeated key, or a comma-separated list. */
+    size?: string | string[];
+    /** Colour name or hex value, matched case-insensitively. */
+    color?: string | string[];
+    inStock?: boolean;
+    sortBy?: "relevance" | "price_asc" | "price_desc" | "newest" | "rating" | "popularity";
 }
 
 export interface SearchProductResultDto {
@@ -111,11 +138,38 @@ export interface SearchProductResultDto {
     inStock: boolean;
     rating: number;
     reviewCount: number;
+    availableColors?: {
+        colorName: string;
+        colorValue: string;
+    }[];
+    category?: {
+        id: string;
+        name: string;
+        slug: string;
+    };
+}
+
+export interface SearchFacetsDto {
+    categories: { id: string; name: string; slug: string; count: number }[];
+    colors: { colorName: string; colorValue: string; count: number }[];
+    sizes: { size: string; count: number }[];
+    genders: { gender: string; count: number }[];
+    priceRange: { min: number; max: number } | null;
 }
 
 export interface SearchProductsResponseDto {
     success: boolean;
     query: string;
+    /** Set when no product matched every word and the search was widened. */
+    widened?: boolean;
+    /** Products on this page — kept for callers written against the old shape. */
     count: number;
+    pagination: {
+        page: number;
+        limit: number;
+        total: number;
+        totalPages: number;
+    };
+    facets: SearchFacetsDto;
     products: SearchProductResultDto[];
 }

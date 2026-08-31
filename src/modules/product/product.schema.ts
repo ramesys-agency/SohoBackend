@@ -1,5 +1,35 @@
 import { z } from "zod";
 
+/** Query strings arrive as strings; a repeated key arrives as an array. */
+const stringOrList = z.union([z.string(), z.array(z.string())]);
+
+const numericQuery = z.coerce.number().finite();
+
+const booleanQuery = z
+    .union([z.boolean(), z.enum(["true", "false"])])
+    .transform((v) => v === true || v === "true");
+
+export const searchProductsQuerySchema = z
+    .object({
+        q: z.string().trim().max(120).optional(),
+        limit: z.coerce.number().int().min(1).max(50).optional().default(20),
+        page: z.coerce.number().int().min(1).optional().default(1),
+        categoryId: z.string().uuid().optional(),
+        categorySlug: z.string().optional(),
+        gender: stringOrList.optional(),
+        minPrice: numericQuery.min(0).optional(),
+        maxPrice: numericQuery.min(0).optional(),
+        size: stringOrList.optional(),
+        color: stringOrList.optional(),
+        inStock: booleanQuery.optional(),
+        sortBy: z
+            .enum(["relevance", "price_asc", "price_desc", "newest", "rating", "popularity"])
+            .optional(),
+    })
+    // Unknown params (a stale client, a bookmarked URL) are ignored rather than
+    // failing the whole search.
+    .strip();
+
 export const createProductVariantImageSchema = z.object({
     imageUrl: z.string().url("Must be a valid URL"),
     isPrimary: z.boolean().optional().default(false),
