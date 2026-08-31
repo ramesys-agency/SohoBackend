@@ -40,21 +40,14 @@ services:
             minio:
                 condition: service_started
         restart: unless-stopped
-        networks:
-            - internal
-            - external
-        # Do NOT add `coolify` here. Coolify already attaches this container to its
-        # proxy network at deploy time, and declaring it in compose changes how
-        # Docker's embedded DNS resolves the bare hostnames `postgres` and `redis` —
-        # Coolify's own stack runs services by those exact names on that network, so
-        # the app connects to Coolify's database and dies on `password authentication
-        # failed for user "postgres"` (seen on 2026-08-31).
-        labels:
-            # The container sits on three networks, so without this Traefik picks one
-            # of its IPs at random. Land on internal/external and every request to
-            # api.soho-bd.com blackholes into a 504 after the 30s dial timeout — which
-            # is what happened on the 2026-08-31 redeploy, with no code change.
-            - "traefik.docker.network=coolify"
+        # No `networks:` on purpose. Coolify creates one network per deployment and
+        # attaches coolify-proxy to it, so Traefik has exactly one container IP to
+        # target. Declaring custom networks puts the container on several at once and
+        # Traefik picks one at random — land on the wrong one and every request to
+        # api.soho-bd.com dies as a 504 after the 30s dial timeout (2026-08-31).
+        # Adding `coolify` instead is worse: it breaks Docker's internal DNS, so the
+        # bare hostname `postgres` resolves to Coolify's own database container and
+        # the app dies on `password authentication failed for user "postgres"`.
 
     postgres:
         image: postgres:16-alpine
@@ -73,8 +66,6 @@ services:
             timeout: 5s
             retries: 5
         restart: unless-stopped
-        networks:
-            - internal
 
     redis:
         image: redis:7-alpine
@@ -94,8 +85,6 @@ services:
             timeout: 5s
             retries: 5
         restart: unless-stopped
-        networks:
-            - internal
 
     minio:
         image: minio/minio:latest
@@ -109,23 +98,10 @@ services:
             - minio-data:/data
         command: server /data --console-address ":9001"
         restart: unless-stopped
-        networks:
-            - internal
-            - external
-            - coolify          # Must be on Coolify's proxy network so Traefik can reach it
         labels:
             # Force Traefik to route minio.soho-bd.com to port 9000 (S3 API),
             # NOT port 9001 (MinIO Console UI).
             - "traefik.http.services.minio-s3.loadbalancer.server.port=9000"
-            - "traefik.docker.network=coolify"
-
-networks:
-    internal:
-        driver: bridge
-    external:
-        driver: bridge
-    coolify:
-        external: true    # Coolify's Traefik proxy network — do NOT recreate it
 
 volumes:
     postgres-data:
