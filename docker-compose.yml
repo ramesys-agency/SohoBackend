@@ -43,7 +43,12 @@ services:
         networks:
             - internal
             - external
-            - coolify          # Must be on Coolify's proxy network so Traefik can reach it
+        # Do NOT add `coolify` here. Coolify already attaches this container to its
+        # proxy network at deploy time, and declaring it in compose changes how
+        # Docker's embedded DNS resolves the bare hostnames `postgres` and `redis` —
+        # Coolify's own stack runs services by those exact names on that network, so
+        # the app connects to Coolify's database and dies on `password authentication
+        # failed for user "postgres"` (seen on 2026-08-31).
         labels:
             # The container sits on three networks, so without this Traefik picks one
             # of its IPs at random. Land on internal/external and every request to
